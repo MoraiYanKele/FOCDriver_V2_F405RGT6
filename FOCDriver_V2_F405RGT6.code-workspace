@@ -1,0 +1,19 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "motortask.h": "c",
+            "usermain.h": "c",
+            "vofa.h": "c",
+            "callback.h": "c",
+            "uart_dma.h": "c",
+            "usart.h": "c",
+            "string.h": "c"
+        }
+    },
+    "extensions": {}
+}
