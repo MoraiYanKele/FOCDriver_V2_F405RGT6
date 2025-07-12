@@ -12,7 +12,8 @@
             "callback.h": "c",
             "uart_dma.h": "c",
             "usart.h": "c",
-            "string.h": "c"
+            "string.h": "c",
+            "cmdtask.h": "c"
         }
     },
     "extensions": {}

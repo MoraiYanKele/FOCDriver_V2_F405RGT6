@@ -5,6 +5,7 @@
 #include "LowPassFilter.h"
 #include "MotorTask.h"
 #include "CmdTask.h"
+#include "SafetyTask.h"
 
 extern "C" 
 {
@@ -58,10 +59,17 @@ void userMain()
   // HAL_ADCEx_InjectedStart_IT(&hadc1); // 启动注入通道ADC转换
 
 
+  xTaskCreate(SafetyTask, "SafetyTask", 512, NULL, osPriorityHigh, &SafetyTaskHandle); 
 
-  xTaskCreate(PrintTask, "PrintTask", 2048, NULL, osPriorityNormal, NULL); // 创建打印任务
+
   xTaskCreate(MotorTask, "MotorTask", 256, NULL, osPriorityHigh, &MotorTaskHandle); // 创建电机任务
-  motorMode = CONTROL_MODE_POSITION; // 设置电机控制模式为 NONE
+  xTaskCreate(CmdTask, "CmdTask", 1024, NULL, osPriorityNormal, &CmdTaskHandle); // 创建命令任务
+// 创建安全监控任务
+
+#ifdef VOFA_DEBUG
+  xTaskCreate(PrintTask, "PrintTask", 1024, NULL, osPriorityHigh, NULL); // 创建打印任务
+#endif // DEBUG
+  
   // targetSpeed = 40.0f; // 设置目标速度
   // xTaskCreate(CmdTask, "CmdTask", 2048, NULL, 1, &CmdTaskHandle); // 创建命令任务
   // long long tempAOffset = 0;
@@ -100,13 +108,20 @@ void PrintTask(void *argument)
   VOFA_RegisterData_float("kp", &motor.positionPidController.Kp);
   VOFA_RegisterData_float("ki", &motor.positionPidController.Ki);
   VOFA_RegisterData_float("kd", &motor.positionPidController.Kd);
-
+  Printf("PrintTask\n");
   while (1)
   {
     float angle = motor.GetMechanicalAngle(); // 获取机械角度
     float velocity = motor.GetVelocity(angle); // 获取电机速度
-    Printf("%f, %f\n", angle, targetPosition);
-    // Printf("%f, %f, %f\n", angle, targetSpeed, velocity);
+
+    // uint8_t* floatData = (uint8_t*)&motor.zeroElectricAngle; // 获取零电角度的字节数据
+    // char hexString[9]; // 8位十六进制数 + 1个结束符
+    // sprintf(hexString, "%02X%02X%02X%02X", 
+    //        floatData[0], floatData[1], floatData[2], floatData[3]);
+
+
+    // Printf("%f, %f, %f\n", motor.zeroElectricAngle, targetPosition,angle);
+    Printf("%f, %f, %f\n", targetPosition, angle, motor.zeroElectricAngle);
 
     vTaskDelay(pdMS_TO_TICKS(10));
   }

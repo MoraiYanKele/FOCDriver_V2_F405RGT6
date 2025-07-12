@@ -21,11 +21,14 @@ extern "C" {
 
 
 // #define USE_USB_VIRTUAL // 使用USB虚拟串口
-#define  USE_UART_DMA 
+#define USE_UART_DMA        1
+// #define VOFA_DEBUG          1
+#define YAW_MOTOR           1 // 使用偏航电机
 
 #define _PI 3.14159265358979323846f // 定义 PI 常量
 
-#define Delay(ms)   vTaskDelay(pdMS_TO_TICKS(ms)) // FreeRTOS延时函数
+#define Delay(ms)         vTaskDelay(pdMS_TO_TICKS(ms)) // FreeRTOS延时函数
+
 
 void userMain();
 

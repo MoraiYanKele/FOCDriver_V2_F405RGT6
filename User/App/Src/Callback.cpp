@@ -1,19 +1,47 @@
 #include "Callback.h"
+#include "CmdTask.h"
+
+extern "C" 
+{
 #include "VOFA.h"
+}
+
+extern TaskHandle_t CmdTaskHandle; // 命令任务句柄
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-  if (huart == VOFA_UART) // 检查是否是 VOFA UART
+
+#ifdef VOFA_DEBUG
+
+  if (huart == VOFA_UART) 
   {
-    VOFA_RxCallBack(); // 调用 VOFA 接收回调函数
+    // 处理VOFA接收数据
+    VOFA_RxCallBack();
+    // 如果使用USB虚拟串口，则调用USB接收回调
   }
+
+#else
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE; // 用于任务切换的标志
+
+  if (huart == CMD_UART)
+  {
+    vTaskNotifyGiveFromISR(CmdTaskHandle, &xHigherPriorityTaskWoken);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken); // 如果需要，触发任务切换
+  }
+#endif
 }
+
+
+
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) 
 {
+#ifdef VOFA_DEBUG
   if (huart == VOFA_UART) 
   {
     TxCallBack_DoubleBufferUartDMA(&uartToVOFA);
   }
+#endif
 }
 
 // void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)

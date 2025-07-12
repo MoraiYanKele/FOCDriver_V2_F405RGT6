@@ -57,7 +57,7 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
           DEFAULT_POSITION_KI, 
           DEFAULT_POSITION_KD, 
           DEFAULT_PID_SAMPLE_TIME, 
-          40.0f, 200.0f, 0.001f, 
+          30.0f, 200.0f, 0.001f, 
           PID_MODE_POSITION);
 
   PID_Init(&speedPidController, 
@@ -88,14 +88,14 @@ float FOC::GetMechanicalAngle()
 float FOC::CalibrateZeroElectricAngle()
 {
   SetPhaseVoltage(0.0f, 8.0f, 0.0f);
-  vTaskDelay(pdMS_TO_TICKS(2000));
+  vTaskDelay(pdMS_TO_TICKS(500));
   
   float angleSum = 0;
   int samples = 50;
   for (int i=0; i<samples; i++) 
   {
     angleSum += GetMechanicalAngle();
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
   float mechanicalAngle_locked = angleSum / samples;
   
@@ -275,4 +275,23 @@ void FOC::SetPIDParameters(float kp_speed, float ki_speed, float kd_speed,
   currentPidController.Ki = ki_current;
   currentPidController.Kd = kd_current;
 }
+
+// 安全监控相关方法实现
+
+/**
+ * @brief 紧急停止电机
+ */
+void FOC::EmergencyStop()
+{
+  // 立即设置所有相电压为0
+  SetPhaseVoltage(0.0f, 0.0f, 0.0f);
+  
+  // 重置PID控制器积分项，避免积分饱和
+  speedPidController.integral = 0.0f;
+  positionPidController.integral = 0.0f;
+  currentPidController.integral = 0.0f;
+}
+
+
+
 

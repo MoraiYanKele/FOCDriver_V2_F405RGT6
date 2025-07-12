@@ -47,21 +47,41 @@ private:
   // 配置参数
   constexpr static float VOLTAGE_POWER_SUPPLY = 12.6f;  // 电源电压
   constexpr static float VOLTAGE_LIMIT = 10.0f;        // 电压限制
-  constexpr static int POLE_PAIRS = 11;                // 极对数
   constexpr static uint32_t PWM_MAX_VALUE = 4200;     // PWM最大值
 
-  // 默认PID参数
-  constexpr static float DEFAULT_POSITION_KP = 11.05f; // 默认位置PID参数
-  constexpr static float DEFAULT_POSITION_KI = 0.0f;
-  constexpr static float DEFAULT_POSITION_KD = 0.00001f;
 
-  constexpr static float DEFAULT_SPEED_KP = 0.68f; // 默认速度PID参数
-  constexpr static float DEFAULT_SPEED_KI = 0.9223f;
+#ifdef YAW_MOTOR
+  constexpr static int POLE_PAIRS = 11;                // 极对数(yaw轴电机)
+  // 默认PID参数（yaw轴电机）
+  constexpr static float DEFAULT_POSITION_KP = 11.7f; // 默认位置PID参数
+  constexpr static float DEFAULT_POSITION_KI = 0.62f;
+  constexpr static float DEFAULT_POSITION_KD = 0.14f;
+
+  constexpr static float DEFAULT_SPEED_KP = 0.78f; // 默认速度PID参数
+  constexpr static float DEFAULT_SPEED_KI = 0.69f;
   constexpr static float DEFAULT_SPEED_KD = 0.0f;
 
-  constexpr static float DEFAULT_CURRENT_KP = 3.0f; // 默认电流PID参数
+  constexpr static float DEFAULT_CURRENT_KP = 0.0f; // 默认电流PID参数
   constexpr static float DEFAULT_CURRENT_KI = 0.0f;
   constexpr static float DEFAULT_CURRENT_KD = 0.0f;
+
+#else 
+
+  constexpr static int POLE_PAIRS = 7;                // 极对数（pitch轴电机）
+  // 默认PID参数（pitch轴电机）
+  constexpr static float DEFAULT_POSITION_KP = 14.05f; // 默认位置PID参数
+  constexpr static float DEFAULT_POSITION_KI = 0.61f;
+  constexpr static float DEFAULT_POSITION_KD = 0.11001f;
+
+  constexpr static float DEFAULT_SPEED_KP = 0.15f; // 默认速度PID参数
+  constexpr static float DEFAULT_SPEED_KI = 0.24f;
+  constexpr static float DEFAULT_SPEED_KD = 0.0f;
+
+  constexpr static float DEFAULT_CURRENT_KP = 0.0f; // 默认电流PID参数
+  constexpr static float DEFAULT_CURRENT_KI = 0.0f;
+  constexpr static float DEFAULT_CURRENT_KD = 0.0f;
+
+#endif
 
   constexpr static float DEFAULT_PID_SAMPLE_TIME = 0.001f; // 默认PID采样时间
 
@@ -77,7 +97,6 @@ private:
 
   LPS speedFiliter{1000.0f, 4.0f};
 
-  // 硬件抽象层
   TIM_HandleTypeDef* pwmTimer = nullptr;  // PWM定时器句柄
   bool isInitialized = false;             // 初始化标志
 
@@ -91,7 +110,12 @@ public:
   PIDControllerTypedef positionPidController;
   PIDControllerTypedef currentPidController;
  
-  float zeroElectricAngle = 0.0f; // 零电角度
+#ifdef YAW_MOTOR
+
+  float zeroElectricAngle = 4.62f; // 零电角度
+#else
+  float zeroElectricAngle = 4.5f; // 零电角度
+#endif
   float voltageA = 0.0f, voltageB = 0.0f, voltageC = 0.0f; // 三相电压
 
   FOC();
@@ -120,14 +144,6 @@ public:
 
   // 安全检查和错误处理
   void EmergencyStop();
-  bool CheckSafetyLimits(float voltage, float current);
-  void GetStatus(float* voltages, float* currents, float* angle, float* speed);
-  
-  // 诊断接口
-  float GetPhaseVoltage(int phase) const;
-  float GetPhaseCurrent(int phase) const;
-  bool IsOverCurrent() const;
-  bool IsOverVoltage() const;
 };
 
 

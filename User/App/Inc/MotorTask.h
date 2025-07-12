@@ -13,14 +13,14 @@ extern "C" {
 }
 #endif
 
-
+#ifdef __cplusplus
 
 #include "common_inc.h" // 包含必要的头文件
 #include "Foc.h" // 包含 FOC 类定义
 
 typedef enum
 {
-  NONE                  = 0,        // 无控制模式
+  CONTROL_MODE_NONE     = 0,        // 无控制模式
   CONTROL_MODE_SPEED    = 1,        // 速度控制模式
   CONTROL_MODE_POSITION = 2,        // 位置控制模式
 } ControlModeTypedef;
@@ -38,5 +38,6 @@ extern "C" {
 void MotorTask(void *argument);
 
 }
+#endif // __cplusplus
 
 #endif // !__MOTOR_TASK_H__
