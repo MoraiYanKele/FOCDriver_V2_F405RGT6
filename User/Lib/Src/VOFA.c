@@ -151,15 +151,32 @@ void VOFA_SendFireWater(const char *format, ...)
     VOFA_UART_SEND(UART_TO_VOFA, (uint8_t *)txBuffer, strlen(txBuffer));
 }
 
+static char g_printfTxBuffer[1024];
+static volatile uint8_t g_printfBusy = 0;
+
 void Printf(const char *format, ...) 
 {
-    char txBuffer[128];  
+    // 简单防重入：如果正在用就直接返回（也可以选择等待）
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    if (g_printfBusy) {
+        __set_PRIMASK(primask);
+        return;
+    }
+    g_printfBusy = 1;
+    __set_PRIMASK(primask);
+
     va_list args;
     va_start(args, format);
-    vsnprintf(txBuffer, sizeof(txBuffer), format, args); // 格式化字符串
+    vsnprintf(g_printfTxBuffer, sizeof(g_printfTxBuffer), format, args);
     va_end(args);
-    
-    VOFA_UART_SEND(UART_TO_VOFA, (uint8_t *)txBuffer, strlen(txBuffer));
+
+    VOFA_UART_SEND(UART_TO_VOFA, (uint8_t *)g_printfTxBuffer, strlen(g_printfTxBuffer));
+
+    primask = __get_PRIMASK();
+    __disable_irq();
+    g_printfBusy = 0;
+    __set_PRIMASK(primask);
 }
 
 

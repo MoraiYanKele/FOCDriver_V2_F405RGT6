@@ -1,1 +1,3 @@
-{}
+{
+  "cmake.sourceDirectory": "D:/stm32/Project_keil/FOCDriver_V2_F405RGT6/Drivers/CMSIS/NN/Source/ActivationFunctions"
+}

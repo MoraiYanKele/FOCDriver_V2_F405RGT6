@@ -8,7 +8,6 @@ extern "C" {
 
 void userMain();
 
-
 #ifdef __cplusplus
 }
 #endif

@@ -17,75 +17,58 @@ extern "C" {
 #ifdef __cplusplus
 
 #include "common_inc.h" // 包含必要的头文件
+#include "Foc.h"
 
-#define CMD_UART            &huart1 
-#define CMD_DMA_HANDEL      &hdma_usart1_rx
+constexpr static float MIT_POS_MAX = PI;  // 位置最大值限制(rad)
+constexpr static float MIT_POS_MIN = -PI; // 位置最小值限制(rad)
+constexpr static float MIT_VEL_MAX = SPEED_LIMIT / 2;  // 速度最大值限制(rad/s)
+constexpr static float MIT_VEL_MIN = -SPEED_LIMIT / 2;  // 速度最小值限制(rad/s)
+constexpr static float MIT_TORQUE_MAX = TORQUE_LIMIT; // 力矩最大值限制(Nm)
+constexpr static float MIT_TORQUE_MIN = -TORQUE_LIMIT; // 力矩最小值限制(Nm)
+constexpr static float MIT_KP_MAX = 1.0f; // kp 最大值限制
+constexpr static float MIT_KP_MIN = 0.0f;    // kp 最小
+constexpr static float MIT_KD_MAX = 0.1f; // kd 最大值限制
+constexpr static float MIT_KD_MIN = 0.0f;    // kd 最小
 
-// CRC8校验相关定义
-#define CRC8_POLYNOMIAL    0x07        // CRC8多项式 (x^8 + x^2 + x^1 + x^0)
-#define CRC8_INIT_VALUE    0x00        // CRC8初始值
-// #define FRAME_HEADER       0xAA        // 帧头标识
-// #define FRAME_FOOTER       0x55        // 帧尾标识
+constexpr static uint8_t MIT_POS_BITS = 16;   // 位置位数
+constexpr static uint8_t MIT_VEL_BITS = 12;   // 速度位数
+constexpr static uint8_t MIT_TORQUE_BITS = 12; // 力矩位数
+constexpr static uint8_t MIT_KP_BITS = 12;     // kp 位数
+constexpr static uint8_t MIT_KD_BITS = 12;     // kd 位数
 
-
-namespace Cmd 
+enum MotorCanId : uint32_t
 {
-  const uint8_t SET_POSITION = 0x01;
-  const uint8_t SET_SPEED = 0x02;
-  const uint8_t EMERGENCY_STOP = 0x10;
-  const uint8_t CLEAR_SAFETY = 0x11;
-  const uint8_t GET_TARGET_POSITION = 0x20; // 获取目标位置命令
-  const uint8_t GET_CURRENT_POSITION = 0x21; // 获取当前位置信息命令
-  const uint8_t FRAME_HEADER = 0xAA; // 帧尾标识
-  const uint8_t FRAME_FOOTER = 0x55; // 帧尾标识
-  const uint8_t RESPONSE_HEADER = 0xBB; // 帧头标识
-  const uint8_t RESPONSE_FOOTER = 0x66; // 响应帧尾标识
-}
+  M1_ID = 0x100, 
+  M2_ID = 0x200, 
+  M3_ID = 0x300, 
+  M4_ID = 0x400,
+};
 
-// CRC8校验函数声明
-
-
-// 优化的命令帧结构（支持CRC8校验）
-typedef struct 
+enum MotorCanExtId : uint32_t
 {
-    uint8_t header;         // 帧头 0xAA
-    uint8_t cmd;            // 命令类型
-    uint8_t dataLength;     // 数据长度 (0-8字节)
-    uint8_t data[4];        // 数据区 (可存储1个float或4个uint8_t)
-    uint8_t footer;         // 帧尾 0x55
-} CmdFrameTypedef;
-
-// 命令类型定义
-#define CMD_SET_POSITION     0x01    // 设置位置命令
-#define CMD_SET_SPEED        0x02    // 设置速度命令
-#define CMD_EMERGENCY_STOP   0x10    // 紧急停止命令
-#define CMD_CLEAR_SAFETY     0x11    // 清除安全错误命令
+  TORQUE_CTRL     = 0x1,
+  VELOCITY_CTRL   = 0x2,
+  POSITION_CTRL   = 0x3,
+  MIT_CTRL        = 0x4,
+  STATUS_FEEDBACK = 0x5,
+};
 
 
 
-
-
-
-// 数据联合体（支持多种数据类型）
-typedef union
+struct MITCmd_t
 {
-  float floatData; // 浮点数据
-  uint8_t uint8Data[4]; // 4字节无符号整数数据
-}CmdDataUnionTypedef;
+  float position;
+  float velocity;
+  float torque;
+  float kp;
+  float kd;
+};
 
-extern TaskHandle_t CmdTaskHandle;
+extern TaskHandle_t cmdTaskHandle;
+extern "C" 
+{
 
-
-
-bool ProcessFloatCommand(const CmdFrameTypedef *frame);
-bool CheckCmdFrame(const CmdFrameTypedef *frame);
-void TransmitCmdFrame(const CmdFrameTypedef *frame);
-void TsetTransmitCmdFrame(uint8_t data);
-
-extern "C" {
-
-bool ReceiveCmdFrame(uint8_t *rxData, uint16_t length);
-void CmdTask(void *argument);
+  void CmdTask(void *argument);
 
 }
 #endif // __cplusplus

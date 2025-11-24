@@ -8,6 +8,16 @@ extern "C"
   #include "MT6701.h"
 }
 
+enum class  SectorType : uint8_t
+{
+  Sector_1 = 3,
+  Sector_2 = 1,
+  Sector_3 = 5,
+  Sector_4 = 4,
+  Sector_5 = 6,
+  Sector_6 = 2
+};
+
 
 FOC::FOC()
 {
@@ -19,9 +29,8 @@ FOC::~FOC()
 
 bool FOC::Init(TIM_HandleTypeDef* timer)
 {
-  if (timer == nullptr) {
+  if (timer == nullptr) 
     return false;
-  }
   
   pwmTimer = timer;
   
@@ -29,9 +38,9 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
   voltageA = 0.0f;
   voltageB = 0.0f;
   voltageC = 0.0f;
-  currentA = 0.0f;
-  currentB = 0.0f;
-  currentC = 0.0f;
+  Ia = 0.0f;
+  Ib = 0.0f;
+  Ic = 0.0f;
 
   // 启动PWM通道
   bool initSuccess = true;
@@ -48,6 +57,9 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
     return false;
   }
 
+  // 对于高级定时器(如TIM1/TIM8)，必须使能主输出，否则PWM不会有任何输出
+  __HAL_TIM_MOE_ENABLE(pwmTimer);
+
   // 初始化DWT计时器
   DWT_Init(168);
 
@@ -56,72 +68,81 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
           DEFAULT_POSITION_KP, 
           DEFAULT_POSITION_KI, 
           DEFAULT_POSITION_KD, 
-          DEFAULT_PID_SAMPLE_TIME, 
-          30.0f, 200.0f, 0.001f, 
+          0.001f, 
+          POSITION_PID_MAX_OUT * 0.75f, POSITION_PID_MAX_OUT, 0.0f, 
           PID_MODE_POSITION);
 
   PID_Init(&speedPidController, 
           DEFAULT_SPEED_KP, 
           DEFAULT_SPEED_KI, 
           DEFAULT_SPEED_KD, 
-          DEFAULT_PID_SAMPLE_TIME, 
-          10.0f, 5.0f, 0.1f, 
+          0.001f, 
+          SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT * 0.8f, 0.01f, 
           PID_MODE_POSITION);
 
   PID_Init(&currentPidController,
           DEFAULT_CURRENT_KP, 
           DEFAULT_CURRENT_KI, 
           DEFAULT_CURRENT_KD, 
-          DEFAULT_PID_SAMPLE_TIME, 
-          10.0f, 500.0f, 0.001f, 
+          0.0001f, 
+          CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT, 0.001f, 
           PID_MODE_POSITION);
 
-  isInitialized = true;
+  HAL_ADCEx_InjectedStart(&hadc1); // 只启动ADC，不启动中断
+
+  UpdateCurrentOffsets(); // 更新电流偏置
+
+  HAL_ADCEx_InjectedStop(&hadc1);
+
+  // CalibrateZeroElectricAngle();
+  // zeroElectricAngle = 5.43f;
+    zeroElectricAngle = 0.05f;
+
+  __HAL_ADC_ENABLE_IT(&hadc1, ADC_IT_JEOC);
+  HAL_ADCEx_InjectedStart_IT(&hadc1);
+
+
+
   return true;
 }
 
-float FOC::GetMechanicalAngle()
+void FOC::GetMechanicalAngle()
 {
-  return GetAngle(angleRead());
+  motorAngle = GetAngle(angleRead());
 }
 
-float FOC::CalibrateZeroElectricAngle()
+void FOC::CalibrateZeroElectricAngle()
 {
-  SetPhaseVoltage(0.0f, 8.0f, 0.0f);
-  vTaskDelay(pdMS_TO_TICKS(500));
+  SetPhaseVoltage(0.0f, 3.0f, 0.0f); // 在d轴上施加3V电压，q轴电压为0，相当于在alpha轴上施加3V
+
+
+  vTaskDelay(pdMS_TO_TICKS(1000));    
   
   float angleSum = 0;
-  int samples = 50;
+  int samples = 100; 
   for (int i=0; i<samples; i++) 
   {
-    angleSum += GetMechanicalAngle();
+    angleSum += GetAngle(angleRead());
     vTaskDelay(pdMS_TO_TICKS(1));
   }
   float mechanicalAngle_locked = angleSum / samples;
   
-  zeroElectricAngle = GetElectricAngle(mechanicalAngle_locked);
+
+  zeroElectricAngle = NormalizeAngle((float)(POLE_PAIRS) * mechanicalAngle_locked);
   
   SetPhaseVoltage(0.0f, 0.0f, 0.0f);
-  
-
-  return zeroElectricAngle;
 }
 
-void FOC::CalibrationCurrentOffset()
+void FOC::ClarkeParkTransform(float electricalAngle)
 {
-
-}
-
-void FOC::Clarke(float electricalAngle)
-{
-  float Ialpha = -1 * (currentB + currentC);
-  float Ibeta = (currentB - currentC) * 0.57735026919f;
+  float Ialpha = Ia * 2.0f / 3.0f - (Ib + Ic) / 3.0f;
+  float Ibeta = (Ib - Ic) * 0.57735026919f;
 
   Iq = Ibeta * arm_cos_f32(electricalAngle) - Ialpha * arm_sin_f32(electricalAngle); 
   Id = Ialpha * arm_cos_f32(electricalAngle) + Ibeta * arm_sin_f32(electricalAngle);
 
-  // Iq = IqFilter.LPF_Update(Iq); // 低通滤波处理 Iq
-  // Id = IdFilter.LPF_Update(Id); // 低通滤波处理 Id
+  Iq = IqFilter.LPF_Update(Iq); // 低通滤波处理 Iq
+  Id = IdFilter.LPF_Update(Id); // 低通滤波处理 Id
   
   Iq = -Iq;
 }
@@ -129,27 +150,33 @@ void FOC::Clarke(float electricalAngle)
 void FOC::PositionControl(float targetPosition)
 {
   // 位置控制逻辑
-  float currentPosition = GetMechanicalAngle(); // 获取当前机械角度
+  float currentPosition = motorAngle; // 获取当前机械角度
   // 使用 PID 控制器计算速度命令
   float targetSpeed = PIDCompute(&positionPidController, currentPosition, targetPosition);
   
-  float velocity = GetVelocity(currentPosition);
-  
-  float uq = PIDCompute(&speedPidController, velocity, targetSpeed);
-  
+  float currentSpeed = velocity;
+
+  float uq = PIDCompute(&speedPidController, currentSpeed, targetSpeed);
+
   // 设置相电压
   SetPhaseVoltage(uq, 0.0f, GetElectricAngle(currentPosition));
 }
 
 void FOC::SpeedControl(float targetSpeed)
 {
-  float currentPosition = GetMechanicalAngle(); // 获取当前机械角度
-  float currentSpeed = GetVelocity(currentPosition); // 获取当前速度
+  float currentPosition = motorAngle; // 获取当前机械角度
+  float electricalAngle = GetElectricAngle(currentPosition);
+  float currentSpeed = velocity;
 
   float uq = PIDCompute(&speedPidController, currentSpeed, targetSpeed); 
   
 
   SetPhaseVoltage(uq, 0.0f, GetElectricAngle(currentPosition)); // 设置相电压
+}
+
+void FOC::TorqueControl(float targetTorque)
+{
+  
 }
 
 
@@ -168,45 +195,129 @@ void FOC::SetPhaseVoltage(float uq, float ud, float electricalAngle)
 {
   uAlpha = -uq * arm_sin_f32(electricalAngle) + ud * arm_cos_f32(electricalAngle);
   uBeta = uq * arm_cos_f32(electricalAngle) + ud * arm_sin_f32(electricalAngle);
-  
 
-  voltageA = uAlpha + VOLTAGE_LIMIT / 2;
-  voltageB = (0.5f * (-uAlpha + 1.73205080757f * uBeta)) + VOLTAGE_LIMIT / 2;
-  voltageC = (0.5f * (-uAlpha - 1.73205080757f * uBeta)) + VOLTAGE_LIMIT / 2;
-  // Printf("Voltage: %f, %f, %f\n", voltageA, voltageB, voltageC);/\
+  const float vmax    = BATVEL / _SQRT3;            // 允许的最大空间矢量幅值
+  const float vmax2   = vmax * vmax;                // 先算平方，省掉一次开方
+  float vmag2         = uAlpha * uAlpha + uBeta * uBeta;
 
+  if (vmag2 > vmax2)
+  {
+      // 需要缩放时再开方（或改用 arm_inv_sqrt_f32 更快）
+    float scale = vmax / sqrtf(vmag2);
+    uAlpha *= scale;
+    uBeta  *= scale;
+  }
+
+  SvpwmSector();
   SetPwm();
+}
+
+void FOC::SvpwmSector()
+{
+  float ta = 0.0f;
+  float tb = 0.0f;
+  float tc = 0.0f;
+  float k = (TS * _SQRT3) * INVBATVEL;
+  float va = uBeta;
+  float vb = (_SQRT3 * uAlpha - uBeta) * 0.5f;
+  float vc = (-_SQRT3 * uAlpha - uBeta) * 0.5f;
+  int a = (va > 0) ? 1 : 0;
+  int b = (vb > 0) ? 1 : 0;
+  int c = (vc > 0) ? 1 : 0;
+  SectorType sector = static_cast<SectorType>((c << 2) | (b << 1) | a);
+
+  switch (sector)
+  {
+  case SectorType::Sector_1:
+  {
+    float t4 = k * vb;
+    float t6 = k * va;
+    float t0 = (TS - t4 - t6) * 0.5f;
+
+    ta       = t4 + t6 + t0;
+    tb       = t6 + t0;
+    tc       = t0;
+  }
+  break;
+
+  case SectorType::Sector_2:
+  {
+    float t6 = -k * vc;
+    float t2 = -k * vb;
+    float t0 = (TS - t2 - t6) * 0.5f;
+
+    ta       = t6 + t0;      // a相占空比时间计算
+    tb       = t2 + t6 + t0; // b相占空比时间计算
+    tc       = t0;           // c相占空比时间为t0
+  }  
+  break;
+
+  case SectorType::Sector_3:
+  {
+    float t2 = k * va;
+    float t3 = k * vc;
+    float t0 = (TS - t2 - t3) * 0.5f;
+
+    ta       = t0;           // a相占空比时间为t0
+    tb       = t2 + t3 + t0; // b相占空比时间计算
+    tc       = t3 + t0;      // c相占空比时间计算
+  }
+  break;
+
+  case SectorType::Sector_4:
+  {
+    float t1 = -k * va;
+    float t3 = -k * vb;
+    float t0 = (TS - t1 - t3) * 0.5f;
+
+    ta       = t0;           // a相占空比时间为t0
+    tb       = t3 + t0;      // b相占空比时间计算
+    tc       = t1 + t3 + t0; // c相占空比时间计算
+  }
+  break;
+
+  case SectorType::Sector_5:
+  {
+    float t1 = k * vc;
+    float t5 = k * vb;
+    float t0 = (TS - t1 - t5) * 0.5f;
+
+    ta       = t5 + t0;      // a相占空比时间计算
+    tb       = t0;           // b相占空比时间为t0
+    tc       = t1 + t5 + t0; // c相占空比时间计算
+  }
+  break;
+
+  case SectorType::Sector_6:
+  {
+    float t4 = -k * vc;
+    float t5 = -k * va;
+    float t0 = (TS - t4 - t5) * 0.5f;
+
+    ta       = t4 + t5 + t0; // a相占空比时间计算
+    tb       = t0;           // b相占空比时间为t0
+    tc       = t5 + t0;      // c相占空比时间计算
+  }
+  break;
+
+  default:
+    break;
+  }
+
+  voltageA_Duty = ta;
+  voltageB_Duty = tb;
+  voltageC_Duty = tc;
+
+  voltageA_Duty = constrain(ta, 0.0f, 1.0f);
+  voltageB_Duty = constrain(tb, 0.0f, 1.0f);
+  voltageC_Duty = constrain(tc, 0.0f, 1.0f);
 }
 
 void FOC::SetPwm() 
 {
-  // if (!isInitialized || !pwmTimer) 
-  // {
-  //   return; // 未初始化，直接返回
-  // }
-
-  // 电压限制
-  float vA = constrain(voltageA, 0.0f, VOLTAGE_LIMIT);
-  float vB = constrain(voltageB, 0.0f, VOLTAGE_LIMIT);
-  float vC = constrain(voltageC, 0.0f, VOLTAGE_LIMIT);
-
-  // 计算占空比，使用浮点运算避免精度损失
-  float dutyCycleA_f = (vA / VOLTAGE_LIMIT) * PWM_MAX_VALUE;
-  float dutyCycleB_f = (vB / VOLTAGE_LIMIT) * PWM_MAX_VALUE;
-  float dutyCycleC_f = (vC / VOLTAGE_LIMIT) * PWM_MAX_VALUE;
-
-  // 转换为整数并限制范围（使用四舍五入提高精度）
-  uint32_t dutyCycleA = constrain(static_cast<uint32_t>(dutyCycleA_f + 0.5f), 0U, PWM_MAX_VALUE);
-  uint32_t dutyCycleB = constrain(static_cast<uint32_t>(dutyCycleB_f + 0.5f), 0U, PWM_MAX_VALUE);
-  uint32_t dutyCycleC = constrain(static_cast<uint32_t>(dutyCycleC_f + 0.5f), 0U, PWM_MAX_VALUE);
-
-
-  // Printf("Duty: %d, %d, %d\n", dutyCycleA, dutyCycleB, dutyCycleC);
-
-  // 设置PWM占空比
-  __HAL_TIM_SET_COMPARE(pwmTimer, TIM_CHANNEL_1, dutyCycleA);
-  __HAL_TIM_SET_COMPARE(pwmTimer, TIM_CHANNEL_2, dutyCycleB);
-  __HAL_TIM_SET_COMPARE(pwmTimer, TIM_CHANNEL_3, dutyCycleC);
+  __HAL_TIM_SET_COMPARE(pwmTimer, TIM_CHANNEL_1, static_cast<uint16_t>(voltageA_Duty * PWM_MAX_VALUE));
+  __HAL_TIM_SET_COMPARE(pwmTimer, TIM_CHANNEL_2, static_cast<uint16_t>(voltageB_Duty * PWM_MAX_VALUE));
+  __HAL_TIM_SET_COMPARE(pwmTimer, TIM_CHANNEL_3, static_cast<uint16_t>(voltageC_Duty * PWM_MAX_VALUE));
 }
 
 
@@ -293,5 +404,132 @@ void FOC::EmergencyStop()
 }
 
 
+void FOC::UpdateCurrent()
+{
+  float adcValueIa = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1); // 获取 IA 电流
+  float adcValueIb = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2);
+  float adcValueIc = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_3);
+  float adcValueVbus = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_4); // 获取 VBUS 电压
+
+  Ia = (float)(adcValueIa - currentAOffset) * FAC_CURRENT_ADC;
+  Ib = (float)(adcValueIb - currentBOffset) * FAC_CURRENT_ADC;
+  Ic = (float)(adcValueIc - currentCOffset) * FAC_CURRENT_ADC;
+  Vbus = (float)adcValueVbus * FAC_VOLTAGE_ADC; // 根据 ADC 分辨率和参考电压计算 VBUS
+}
+
+void FOC::UpdateCurrentOffsets()
+{
+    long long tempAOffset = 0;
+    long long tempBOffset = 0;
+    long long tempCOffset = 0;
+    for (int i = 0; i < 2000; i++)
+    {
+      HAL_ADCEx_InjectedPollForConversion(&hadc1, 1); // 等待转换完成
+      tempAOffset += HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+      tempBOffset += HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2);
+      tempCOffset += HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_3);
+      vTaskDelay(pdMS_TO_TICKS(1)); // 延时 1 毫秒
+    }
+    currentAOffset = (float)tempAOffset / 2000.0f;
+    currentBOffset = (float)tempBOffset / 2000.0f;
+    currentCOffset = (float)tempCOffset / 2000.0f;
+}
 
 
+void FOC::MotorControlTask()
+{
+  static uint8_t loopCount = 0;
+
+  switch (controlMode)
+  {
+  case ControlMode::NONE:
+  {
+    return;
+    break;
+  }
+  case ControlMode::TORQUE:
+  {
+    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+
+    // targetTorque = constrain(targetTorque, -TORQUE_LIMIT, TORQUE_LIMIT);
+    // targetCurrent = constrain(targetTorque / TORQUE_CONST, -CURRENT_LIMIT, CURRENT_LIMIT);
+
+    float maxStepSize = CURRENT_MEASURE_PERIOD * MOTOR_CURRENT_RAMP_RATE;
+    float fullstep = targetCurrent - iqSetpoint;
+    float step = constrain(fullstep, -maxStepSize, maxStepSize);
+    iqSetpoint += step;
+    break;
+
+  }
+
+  case ControlMode::VELOCITY:
+    PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
+    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    break;
+
+  case ControlMode::POSITION:
+    // PID_SetOutputLimits(&positionPidController, -POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
+    PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
+    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    break;
+  
+  case ControlMode::MIT:
+    PID_SetOutputLimits(&positionPidController, -POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
+    PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
+    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    targetTorque = constrain(targetTorque, -TORQUE_LIMIT, TORQUE_LIMIT);
+    targetCurrent = constrain(targetTorque / TORQUE_CONST, -CURRENT_LIMIT, CURRENT_LIMIT);
+    float currentPosition = motorAngle; // 获取当前机械角度
+    float currentSpeed = velocity;
+
+    iqSetpoint = targetCurrent + mitKp * (targetPosition - currentPosition) + mitKd * (targetSpeed - currentSpeed);
+    break;
+  }
+
+
+  float electricalAngle = GetElectricAngle(motorAngle);
+  ClarkeParkTransform(electricalAngle);
+
+  if (controlMode == ControlMode::VELOCITY || controlMode == ControlMode::POSITION)
+  {
+    loopCount++;
+    if (loopCount >= 10) // 10kHz电流环 1Khz速度位置环
+    {
+      loopCount = 0;
+    
+      if (controlMode == ControlMode::VELOCITY)
+      {
+        velocitySetpoint = constrain(targetSpeed, -SPEED_LIMIT, SPEED_LIMIT);
+      }
+      else if (controlMode == ControlMode::POSITION)
+      {
+        float currentPosition = motorAngle; // 获取当前机械角度
+        this->velocitySetpoint = PIDCompute(&this->positionPidController, currentPosition, targetPosition);
+        this->velocitySetpoint = constrain(this->velocitySetpoint, -SPEED_LIMIT, SPEED_LIMIT);
+      }
+      
+      float currentSpeed = velocity;
+      iqSetpoint = PIDCompute(&speedPidController, currentSpeed, velocitySetpoint);
+      iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
+
+    }
+  }
+
+  
+  iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
+  Iq = constrain(Iq, -CURRENT_LIMIT, CURRENT_LIMIT);
+  float uq = PIDCompute(&currentPidController, Iq, iqSetpoint);
+  SetPhaseVoltage(uq, 0.0f, GetElectricAngle(motorAngle)); // 设置相电压
+
+}
+
+void FOC::UpdateMotorAngle()
+{
+  angleSingleTurn = angleRead();
+  motorAngle = GetAngle(angleSingleTurn);
+}
+
+void FOC::UpdateVelocity()
+{
+  velocity = GetVelocity(motorAngle);
+}

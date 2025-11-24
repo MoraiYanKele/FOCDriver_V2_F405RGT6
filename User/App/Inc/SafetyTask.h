@@ -53,11 +53,11 @@ extern volatile bool emergencyStopRequested;
 
 namespace Safety 
 {
-  const float MAX_SPEED = 35.0f;           // 最大速度 30 rad/s
-  const float MAX_POSITION = 0.66f;     // 最大位置 +π rad  
-  const float MIN_POSITION = -1.15f;    // 最小位置 -π rad
+  const float MAX_SPEED = 80.0f;           // 最大速度 30 rad/s
+  const float MAX_POSITION = 3.14f;     // 最大位置 +π rad  
+  const float MIN_POSITION = -3.14f;    // 最小位置 -π rad
   const int SHUTDOWN_TIME = 500;           // 关断时间 500ms
-  const int RESTART_DELAY = 5000;          // 重启延时 1000ms
+  const int RESTART_DELAY = 1000;          // 重启延时 1000ms
   const int FAULT_CONFIRM_TIME = 100;      // 故障确认时间 100ms
 }
 

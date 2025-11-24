@@ -8,7 +8,7 @@
 #include <string.h>
 
 
-// #define  USE_UART_DMA // 用于其他文件判断是否包含了本文件
+#define  USE_UART_DMA // 用于其他文件判断是否包含了本文件
 
 
 #define BUFFER_SIZE   128  // 每次发送的数据长度

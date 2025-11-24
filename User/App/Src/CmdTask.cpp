@@ -2,18 +2,55 @@
 #include "usart.h"
 #include "MotorTask.h"
 #include "SafetyTask.h"
-extern "C" {
+#include "BspCan.h"
+#include "Foc.h"
+extern "C" 
+{
 #include "VOFA.h"
 }
 
-TaskHandle_t CmdTaskHandle = NULL;
+constexpr uint32_t BASE_MASK = 0x7F8; // 低3位为控制码
+constexpr uint32_t CTRL_MASK = 0x007;
+constexpr uint32_t REPORT_INTERVAL_MS = 2; // 状态上报周期 2ms，可调整
 
-uint8_t cmdBuffer[sizeof(CmdFrameTypedef) * 2]; // 命令帧缓冲区
+Can can1(DEVICE_CAN_1);
 
-CmdFrameTypedef cmdFrame; // 命令帧结构体
-float receivedFloat = 0.0f;
+TaskHandle_t cmdTaskHandle = nullptr;
+
+uint8_t canRxBuffer[8] = {0}; // CAN接收缓冲区
+uint32_t canId_Rx = 0; // 接收ID
+static MITCmd_t mitCmd_Rx;
+
+static constexpr uint32_t MOTOR_ID = MotorCanId::M1_ID;
+
+uint32_t baseId = 0;
+uint32_t ctrlId = 0;
 
 
+void GetMitCmd(uint8_t* data, MITCmd_t* mitCmd);
+void SendStatusCmd();
+void AnalyzeCmd(uint32_t ctrlId);
+static uint32_t FloatToUint(float x, float x_min, float x_max, uint8_t bits);
+static float UintToFloat(uint32_t x_int, float x_min, float x_max, uint8_t bits);
+
+
+void CanRxCallback(uint32_t canId, uint8_t* data, uint8_t len)
+{
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+  baseId = canId & BASE_MASK;
+  ctrlId = canId & CTRL_MASK;
+
+  if (baseId == MOTOR_ID)
+  {
+
+    canId_Rx = canId;
+    memcpy(canRxBuffer, data, len);
+
+    vTaskNotifyGiveFromISR(cmdTaskHandle, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+  }
+}
 
 /**
  * @brief 命令处理任务
@@ -21,133 +58,148 @@ float receivedFloat = 0.0f;
  */
 void CmdTask(void *argument)
 {
-  __HAL_UART_ENABLE_IT(CMD_UART, UART_IT_IDLE); // 启用空闲中断
-  HAL_UARTEx_ReceiveToIdle_DMA(CMD_UART, cmdBuffer, sizeof(cmdBuffer)); // 启动DMA空闲中断接收
-  __HAL_DMA_DISABLE_IT(CMD_DMA_HANDEL, DMA_IT_HT); // 禁用DMA半传输中断
-
+  can1.Init(Can::BAUD_1M, Can::MODE_NORMAL);
+  can1.SetRxFifo0Callback(CanRxCallback);
+  can1.ConfigFilterStdId(MOTOR_ID, 0x7F8, Can::FIFO_0, 0);
+  can1.Start();
   while (1)
-  {    
-    uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // 等待通知
-    if (notificationValue > 0)
-    {
-      ReceiveCmdFrame(cmdBuffer, sizeof(cmdBuffer)); // 接收命令帧
-      Delay(2);
-      if (CheckCmdFrame(&cmdFrame))
-      {
-        
-        // 根据命令类型处理不同的命令
-        switch (cmdFrame.cmd)
-        {
-          case Cmd::SET_POSITION:
-            ProcessFloatCommand(&cmdFrame);
-            targetPosition = receivedFloat;
-            break;
-            
-          case Cmd::SET_SPEED:
-            ProcessFloatCommand(&cmdFrame);
-            targetSpeed = receivedFloat;
-            break;
-            
-          case Cmd::EMERGENCY_STOP:
-            RequestEmergencyStop();
- 
-            break;
-            
-          case Cmd::CLEAR_SAFETY:
-            ClearSafetyError();
-     
-            break;
-            
-          case Cmd::GET_TARGET_POSITION:
-            {
-              float position = targetPosition; // 获取目标位置
-              int32_t positionInt = static_cast<int32_t>(position * 10000.0f); // 转换为整数格式
-              CmdFrameTypedef responseFrame;
-              responseFrame.header = Cmd::RESPONSE_HEADER;
-              responseFrame.cmd = Cmd::GET_TARGET_POSITION;
-              responseFrame.dataLength = sizeof(float);
-              memcpy(responseFrame.data, &positionInt, sizeof(int32_t)); // 将整数数据放入命令帧
-              responseFrame.footer = Cmd::RESPONSE_FOOTER;
-              TransmitCmdFrame(&responseFrame); // 发送目标位置
-       
-            }
-            break;
-            
-          case Cmd::GET_CURRENT_POSITION:
-            {
-              float currentPosition = motor.GetMechanicalAngle();
-              int32_t positionInt = static_cast<int32_t>(currentPosition * 10000.0f); // 转换为整数格式
-              CmdFrameTypedef responseFrame;
-              responseFrame.header = Cmd::RESPONSE_HEADER;
-              responseFrame.cmd = Cmd::GET_CURRENT_POSITION;
-              responseFrame.dataLength = sizeof(float);
-              memcpy(responseFrame.data, &positionInt, sizeof(int32_t));
-              responseFrame.footer = Cmd::RESPONSE_FOOTER;
-              
-              TransmitCmdFrame(&responseFrame); // 发送当前位置信息
-            }
-            // 这里可以扩展为设置安全参数的命令
-      
-            break;
-            
-          default:
-            // 处理其他命令或报告未知命令
+  {
+    uint32_t ulNotificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(REPORT_INTERVAL_MS));
 
-            break;
-        }
-      } 
+    if (ulNotificationValue == 0)
+    {
+      // 定时发送状态反馈
+      SendStatusCmd();
+      continue;
     }
 
-    
-    HAL_UARTEx_ReceiveToIdle_DMA(CMD_UART, cmdBuffer, sizeof(cmdBuffer)); // 启动DMA空闲中断接收
-    __HAL_DMA_DISABLE_IT(CMD_DMA_HANDEL, DMA_IT_HT); // 禁用DMA半传输中断
-    Delay(10);
+    else if (ulNotificationValue > 0)
+    {
+      AnalyzeCmd(ctrlId);
+    }
   }
+}
+void AnalyzeCmd(uint32_t ctrlId)
+{
+  switch (ctrlId)
+  {
+  case MotorCanExtId::TORQUE_CTRL:
+  {
+    float torqueRx;
+    memcpy(&torqueRx, &canRxBuffer[0], sizeof(float)); 
+    
+    motor.targetTorque = torqueRx;
+    
+    motor.controlMode = ControlMode::TORQUE;
+    break;
+  }
+  case MotorCanExtId::VELOCITY_CTRL:
+  {
+    float velocityRx;
+    memcpy(&velocityRx, &canRxBuffer[0], sizeof(float)); 
+    
+    motor.targetSpeed = velocityRx;
+    
+    motor.controlMode = ControlMode::VELOCITY;
+    break;
+  }
+  case MotorCanExtId::POSITION_CTRL:
+  {
+    float positionRx;
+    memcpy(&positionRx, &canRxBuffer[0], sizeof(float)); 
+    
+    motor.targetPosition = positionRx;
+    
+    motor.controlMode = ControlMode::POSITION;
+    break;
+  }
+  case MotorCanExtId::MIT_CTRL:
+    GetMitCmd(canRxBuffer, &mitCmd_Rx);
+
+    motor.targetPosition = mitCmd_Rx.position;
+    motor.targetSpeed = mitCmd_Rx.velocity;
+    motor.targetTorque = mitCmd_Rx.torque;
+    motor.mitKp = mitCmd_Rx.kp;
+    motor.mitKd = mitCmd_Rx.kd;
+    
+    motor.controlMode = ControlMode::MIT;
+    break;
+  default:
+    break;
+  }
+}
+
+void SendStatusCmd()
+{
+  float position = motor.angleSingleTurn;
+  float velocity = motor.velocity;
+  float torque   = motor.Iq * TORQUE_CONST;
   
+  uint16_t velInt    = FloatToUint(velocity, -200, 200, 16);
+  uint16_t torqueInt = FloatToUint(torque, -TORQUE_LIMIT * 2, TORQUE_LIMIT * 2, 16);
+
+  uint8_t statusCmd[8];
+
+  memcpy(&statusCmd[0], &position, sizeof(float));
+  statusCmd[4] = velInt >> 8;
+  statusCmd[5] = velInt & 0xFF;
+  statusCmd[6] = torqueInt >> 8;
+  statusCmd[7] = torqueInt & 0xFF;
+
+  can1.SendStdData(MOTOR_ID + MotorCanExtId::STATUS_FEEDBACK, statusCmd, 8);
 }
 
-void TransmitCmdFrame(const CmdFrameTypedef *frame)
+
+void GetMitCmd(uint8_t* data, MITCmd_t* mitCmd)
 {
-  if (frame == NULL)
-    return; // 无效的命令帧
+  uint16_t posInt    = (data[0] << 8) | data[1];
+  uint16_t velInt    = (data[2] << 4) | (data[3] >> 4);
+  uint16_t kpInt     = ((data[3] & 0xF) << 8) | data[4];
+  uint16_t kdInt     = (data[5] << 4) | (data[6] >> 4);
+  uint16_t torqueInt = ((data[6] & 0xF) << 8) | data[7];
 
-  HAL_UART_Transmit_DMA(CMD_UART, (uint8_t *)frame, sizeof(CmdFrameTypedef)); // 通过DMA发送命令帧
+  mitCmd->position = UintToFloat(posInt, MIT_POS_MIN, MIT_POS_MAX, 16);
+  mitCmd->velocity = UintToFloat(velInt, MIT_VEL_MIN, MIT_VEL_MAX, 12);
+  mitCmd->torque   = UintToFloat(torqueInt, MIT_TORQUE_MIN, MIT_TORQUE_MAX, 12);
+  mitCmd->kp       = UintToFloat(kpInt, MIT_KP_MIN, MIT_KP_MAX, 12);
+  mitCmd->kd       = UintToFloat(kdInt, MIT_KD_MIN, MIT_KD_MAX, 12);
 }
 
-void TsetTransmitCmdFrame(uint8_t data)
+
+static uint32_t FloatToUint(float x, float x_min, float x_max, uint8_t bits)
 {
-  uint8_t frame[1];
-  frame[0] = data; // 将数据放入帧中
+  if (x_max <= x_min) 
+    return 0;
+  const uint32_t maxInt = (1u << bits) - 1u;
 
-  HAL_UART_Transmit_DMA(CMD_UART, frame, 1); // 通过DMA发送命令帧
+  float span = x_max - x_min;
+  float normalized = (x - x_min) / span; // in [0,1]
+
+  if (normalized < 0.0f) 
+    normalized = 0.0f;
+  if (normalized > 1.0f) 
+    normalized = 1.0f;
+  // 四舍五入到 nearest
+  uint32_t val = (uint32_t)(normalized * (float)maxInt + 0.5f);
+
+  if (val > maxInt) 
+    val = maxInt;
+
+  return val;
 }
-
-bool ReceiveCmdFrame(uint8_t *rxData, uint16_t length)
+   
+// 安全的 uint->float（解码）
+static float UintToFloat(uint32_t x_int, float x_min, float x_max, uint8_t bits)
 {
-  if (length < sizeof(CmdFrameTypedef))
-    return false;
-  
-  // 将接收到的数据复制到命令帧结构体
-  memcpy(&cmdFrame, rxData, sizeof(CmdFrameTypedef));
-  return true;
+  const uint32_t maxInt = (1u << bits) - 1u;
+  if (maxInt == 0) 
+    return x_min;
+  float span = x_max - x_min;
+  return ((float)x_int) * span / (float)maxInt + x_min;
 }
 
 
-bool ProcessFloatCommand(const CmdFrameTypedef *frame)
-{
-  if (frame == NULL || frame->dataLength < sizeof(float))
-    return false; // 无效的命令帧或数据长度不足
-  int32_t receiveInt = 0;
-  memcpy(&receiveInt, frame->data, sizeof(int32_t)); // 从命令帧中获取整数数据
-  receivedFloat = static_cast<float>(receiveInt) / 10000.0f; // 将整数转换为浮点数
-  return true; // 成功处理命令
-}
 
-bool CheckCmdFrame(const CmdFrameTypedef *frame)
-{
-  if (cmdFrame.header == Cmd::FRAME_HEADER && cmdFrame.footer == Cmd::FRAME_FOOTER)
-    return true; // 命令帧有效
-  
-  else 
-    return false; // 命令帧无效
-}
+
+
+

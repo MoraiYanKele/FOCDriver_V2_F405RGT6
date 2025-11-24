@@ -337,7 +337,7 @@
               <MiscControls />
               <Define>USE_HAL_DRIVER,STM32F405xx</Define>
               <Undefine />
-              <IncludePath>../Core/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Middlewares/ST/ARM/DSP/Inc</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../User/App/Inc;../User/Bsp/Inc;../User/Lib/Inc;../Middlewares/ST/ARM/DSP/Inc</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1559,6 +1559,96 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>User</GroupName>
+          <Files>
+            <File>
+              <FileName>BspDevice.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\Bsp\Src\BspDevice.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>BspTimer.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\Bsp\Src\BspTimer.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>BspUart.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\Bsp\Src\BspUart.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>Callback.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\App\Src\Callback.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>CmdTask.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\App\Src\CmdTask.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>MotorTask.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\App\Src\MotorTask.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>SafetyTask.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\App\Src\SafetyTask.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>user_main.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\App\Src\user_main.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>dwt.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Lib\Src\dwt.c</FilePath>
+            </File>
+            <File>
+              <FileName>Foc.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\Lib\Src\Foc.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>LowPassFiliter.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\Lib\Src\LowPassFiliter.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>MT6701.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Lib\Src\MT6701.c</FilePath>
+            </File>
+            <File>
+              <FileName>pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Lib\Src\pid.c</FilePath>
+            </File>
+            <File>
+              <FileName>RingBuffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Lib\Src\RingBuffer.c</FilePath>
+            </File>
+            <File>
+              <FileName>Uart_DMA.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Lib\Src\Uart_DMA.c</FilePath>
+            </File>
+            <File>
+              <FileName>VOFA.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Lib\Src\VOFA.c</FilePath>
+            </File>
+            <File>
+              <FileName>ws2812.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\User\Lib\Src\ws2812.cpp</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>::CMSIS</GroupName>
         </Group>
         <Group>
@@ -1753,5 +1843,13 @@
     </components>
     <files />
   </RTE>
+  <LayerInfo>
+    <Layers>
+      <Layer>
+        <LayName>FOCDriver_V2_F405RGT6</LayName>
+        <LayPrjMark>1</LayPrjMark>
+      </Layer>
+    </Layers>
+  </LayerInfo>
 </Project>
 

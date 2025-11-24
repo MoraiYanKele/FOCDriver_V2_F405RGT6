@@ -16,7 +16,7 @@
 
 //引脚定义
 #define GPIO_TYPE    GPIOC
-#define MT6701_CSN          4       //片选CSN引脚        PA6
+#define MT6701_CSN          4 
 // #define MT6701_CS_GPIO_Port   GPIOA
 // #define	 MT6701_CS_Pin   6
 

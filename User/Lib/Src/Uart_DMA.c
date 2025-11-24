@@ -46,7 +46,7 @@
      // 立即使用激活缓冲区开始传输
      memcpy(uart->activeBuffer, data, size);
      uart->txBusy = 1; // 标记发送状态为忙碌
-     HAL_UART_Transmit_DMA(uart->huart, uart->activeBuffer, size);
+     HAL_UART_Transmit_DMA(uart->huart, uart->activeBuffer, size); 
    }
  }
  
