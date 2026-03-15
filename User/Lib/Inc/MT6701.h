@@ -30,6 +30,7 @@
 
 //void MT6701_Read_RAW(uint8_t* pBuffer);
 //float MT6701_GetRawAngle(void);
+void MT6701_DMA_Init(void);
 float angleRead( void );
 //angle_raw返回原始角度数据，angle转换后的角度值：0-360,field_status磁场强度；
 void mt6701_read(uint16_t*angle_raw, float*angle, uint8_t*field_status);

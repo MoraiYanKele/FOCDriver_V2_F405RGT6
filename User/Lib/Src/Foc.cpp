@@ -29,10 +29,12 @@ FOC::~FOC()
 
 bool FOC::Init(TIM_HandleTypeDef* timer)
 {
-  if (timer == nullptr) 
+  if (timer == nullptr)
     return false;
-  
+
   pwmTimer = timer;
+
+  MT6701_DMA_Init(); // 初始化 SPI DMA 预取，供校准和运行时使用
   
   // 初始化电机控制相关参数
   voltageA = 0.0f;

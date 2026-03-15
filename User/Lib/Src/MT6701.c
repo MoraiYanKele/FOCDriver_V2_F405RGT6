@@ -24,13 +24,42 @@
 static float angle_data_prev = 0; //上次位置
 static float full_rotation_offset = 0; //转过的整圈数
 
+/* DMA 缓冲区：必须为静态/全局，不能在栈上 */
+static uint8_t dma_tx_buf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+static uint8_t dma_rx_buf[4] = {0};
 
-static void MT6701_Read_RAW(uint8_t* pBuffer)
+/* 启动下一次 DMA 传输（非阻塞，~3µs 后由 DMA 硬件完成） */
+static void MT6701_TriggerDMA(void)
+{
+    MT6701_CSN_CLR;
+    HAL_SPI_TransmitReceive_DMA(&STM32_SPI_PORT, dma_tx_buf, dma_rx_buf, 4);
+}
+
+/* DMA 完成回调：由 DMA2_Stream0 IRQ 调用，释放 CS */
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi->Instance == SPI1) {
+        MT6701_CSN_SET;
+    }
+}
+
+/* 初始化：阻塞读一次填充缓冲区，然后启动第一次预取 DMA */
+void MT6701_DMA_Init(void)
 {
     uint8_t txBuf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
     MT6701_CSN_CLR;
-    HAL_SPI_TransmitReceive(&STM32_SPI_PORT, txBuf, pBuffer, 4, HAL_MAX_DELAY);
+    HAL_SPI_TransmitReceive(&STM32_SPI_PORT, txBuf, dma_rx_buf, 4, 100);
     MT6701_CSN_SET;
+    MT6701_TriggerDMA();
+}
+
+
+static void MT6701_Read_RAW(uint8_t* pBuffer)
+{
+    pBuffer[0] = dma_rx_buf[0];
+    pBuffer[1] = dma_rx_buf[1];
+    pBuffer[2] = dma_rx_buf[2];
+    pBuffer[3] = dma_rx_buf[3];
 }
 
 /*!
@@ -43,7 +72,9 @@ float angleRead(void)
     uint8_t data[4];
     uint16_t angle_u16;
 
-    MT6701_Read_RAW(data);
+    MT6701_Read_RAW(data);       // 从 DMA 缓冲区取上一帧数据
+    MT6701_TriggerDMA();         // 立即启动下一帧 DMA（非阻塞）
+
     angle_u16 = (uint16_t)(data[1] >> 2); //原始值
     angle_u16 |= ((uint16_t)data[0] << 6);
     angle_f = (float)angle_u16 * (_2PI / 16384.0f);
