@@ -24,24 +24,13 @@
 static float angle_data_prev = 0; //上次位置
 static float full_rotation_offset = 0; //转过的整圈数
 
-static uint8_t SPIx_ReadWriteByte(uint8_t TxData)
-{
-
-    uint8_t Rxdata;
-    HAL_SPI_TransmitReceive(&STM32_SPI_PORT, &TxData, &Rxdata, 1, HAL_MAX_DELAY);
-    return Rxdata;
-}
-
 
 static void MT6701_Read_RAW(uint8_t* pBuffer)
 {
-    uint16_t i;
-    MT6701_CSN_CLR;//MT6701_CSN=0  //片选
-    for(i = 0; i < 4; i++) {
-        pBuffer[i] = SPIx_ReadWriteByte(0xFF); //循环读入字节数据
-    }
-    MT6701_CSN_SET; //MT6701_CSN=1
-    
+    uint8_t txBuf[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    MT6701_CSN_CLR;
+    HAL_SPI_TransmitReceive(&STM32_SPI_PORT, txBuf, pBuffer, 4, HAL_MAX_DELAY);
+    MT6701_CSN_SET;
 }
 
 /*!

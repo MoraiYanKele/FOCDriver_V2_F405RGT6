@@ -550,7 +550,9 @@ void FOC::MotorControlTask()
       {
         // 加速时跟随（避免推动时产生阻力）
         if (fabsf(velocity) > fabsf(targetSpeed))
-          targetSpeed = velocity;
+        {
+          targetSpeed = velocity;          
+        }
 
         // 惯性衰减
         targetSpeed *= inertiaDecay;
