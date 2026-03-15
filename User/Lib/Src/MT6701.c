@@ -37,7 +37,7 @@ static void MT6701_Read_RAW(uint8_t* pBuffer)
 {
     uint16_t i;
     MT6701_CSN_CLR;//MT6701_CSN=0  //片选
-    for(i = 0; i < 3; i++) {
+    for(i = 0; i < 4; i++) {
         pBuffer[i] = SPIx_ReadWriteByte(0xFF); //循环读入字节数据
     }
     MT6701_CSN_SET; //MT6701_CSN=1

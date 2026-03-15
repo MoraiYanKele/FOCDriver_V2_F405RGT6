@@ -20,7 +20,7 @@ void MotorTask()
   motor.UpdateCurrent();
   motor.UpdateMotorAngle();
   loopCount++;
-  if (loopCount >= 10) // 10kHz电流环 1Khz速度位置环
+  if (loopCount >= 20) // 20kHz电流环 1Khz速度位置环
   {
     loopCount = 0;
     motor.UpdateVelocity();
@@ -36,7 +36,9 @@ void MotorTask()
   case MotorMode::NONE:
 
     motor.motorMode = MotorMode::RUNNING; // 切换到运行模式
-    motor.controlMode = ControlMode::NONE; // 默认速度控制模式
+    motor.targetSpeed = 0.0f;
+    motor.velocitySetpoint = 0.0f;
+    motor.controlMode = ControlMode::INERTIA;
     
     break;
 

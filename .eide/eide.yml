@@ -265,7 +265,7 @@ targets:
       OpenOCD:
         baseAddr: "0x08000000"
         bin: ""
-        interface: stlink-v2-1
+        interface: cmsis-dap
         target: stm32f4x
       STLink:
         address: "0x8000000"
@@ -277,4 +277,4 @@ targets:
         resetMode: default
         runAfterProgram: true
         speed: 4000
-    uploader: OpenOCD
+    uploader: JLink

@@ -21,7 +21,7 @@ uint8_t canRxBuffer[8] = {0}; // CAN接收缓冲区
 uint32_t canId_Rx = 0; // 接收ID
 static MITCmd_t mitCmd_Rx;
 
-static constexpr uint32_t MOTOR_ID = MotorCanId::M1_ID;
+static constexpr uint32_t MOTOR_ID = MotorCanId::M2_ID;
 
 uint32_t baseId = 0;
 uint32_t ctrlId = 0;
@@ -58,6 +58,7 @@ void CanRxCallback(uint32_t canId, uint8_t* data, uint8_t len)
  */
 void CmdTask(void *argument)
 {
+  vTaskDelay(10);
   can1.Init(Can::BAUD_1M, Can::MODE_NORMAL);
   can1.SetRxFifo0Callback(CanRxCallback);
   can1.ConfigFilterStdId(MOTOR_ID, 0x7F8, Can::FIFO_0, 0);

@@ -54,6 +54,8 @@ enum class ControlMode : uint8_t
   VELOCITY = 2,      // 速度控制模式
   POSITION = 3,      // 位置控制模式
   MIT = 4,           // MIT 协议控制模式
+  RATCHET = 5,       // 棘轮触觉反馈模式
+  INERTIA = 6,       // 惯性飞轮模式
 };
 
 
@@ -106,11 +108,11 @@ constexpr static float INVBATVEL                = (1.0f / BATVEL);              
 constexpr static float VOLTAGE_LIMIT            = BATVEL / _SQRT3;                // 电压限制
 constexpr static float CURRENT_LIMIT            = (TORQUE_LIMIT / TORQUE_CONST);  // 电流限制 (A)
 constexpr static float SPEED_LIMIT              = (SPEED_LIMIT_RPM * _PI / 30.0f);// 速度限制 (rad/s)
-constexpr static uint32_t PWM_MAX_VALUE         = 8400;                           // PWM最大值
+constexpr static uint32_t PWM_MAX_VALUE         = 4200;                           // PWM最大值
 constexpr static float TS                       = 1.0f;                           // 控制周期（归一化到1.0）
 constexpr static float FAC_CURRENT_ADC          = (3.3f / 4096.0f) * 4;           // 电流ADC转换系数
 constexpr static float FAC_VOLTAGE_ADC          = (3.3f / 4096.0f) * 11;          // 电压ADC转换系数
-constexpr static float CURRENT_MEASURE_PERIOD   = 0.0001f;                        // 电流测量周期 (秒)
+constexpr static float CURRENT_MEASURE_PERIOD   = 0.00005f;                        // 电流测量周期 (秒)
 constexpr static float VELOCITY_MEASURE_PERIOD  = 0.001f;                         // 速度测量周期 (秒)
 constexpr static float MOTOR_CURRENT_RAMP_RATE  = 0.5f;                           // 电流爬升力矩 [Nm/s]
 
@@ -137,12 +139,12 @@ private:
 
   LPS speedFiliter{1000.0f, 100.0f};         // 速度低通滤波器
 
-  LPS IqFilter{10000.0f, 40.0f};             // q轴电流低通滤波器
-  LPS IdFilter{10000.0f, 40.0f};             // d轴电流低通滤波器
+  LPS IqFilter{20000.0f, 40.0f};             // q轴电流低通滤波器
+  LPS IdFilter{20000.0f, 40.0f};             // d轴电流低通滤波器
 
-  LPS IaFilter{10000.0f, 1000.0f};          // A相电流低通滤波器
-  LPS IbFilter{10000.0f, 1000.0f};          // B相电流低通滤波器
-  LPS IcFilter{10000.0f, 1000.0f};          // C相电流低通滤波器
+  LPS IaFilter{20000.0f, 1000.0f};          // A相电流低通滤波器
+  LPS IbFilter{20000.0f, 1000.0f};          // B相电流低通滤波器
+  LPS IcFilter{20000.0f, 1000.0f};          // C相电流低通滤波器
 
 
   void SetPwm();
@@ -167,6 +169,15 @@ public:
 
   float mitKp = 0.0f;       // MIT 协议位置控制比例系数
   float mitKd = 0.0f;       // MIT 协议位置控制微分系数
+
+  float ratchetSpacing = (30.0f * _PI / 180.0f); // 棘轮间距 30°/格
+  float ratchetKp      = 0.5f;                   // 棘轮刚度系数 (A/rad)
+  float ratchetKd      = 0.2f;                  // 棘轮阻尼系数 (A·s/rad)
+
+  float inertiaDecay             = 0.9999f;  // 惯性衰减系数（每1ms），越接近1惯性越大（勿设为1.0）
+  float inertiaMaxCurrent        = 0.3f;   // 最大维持电流(A)，越小越容易停住
+  float inertiaKp                = 0.01f;  // 惯性比例增益(A·s/rad)，纯P控制无积分
+  float inertiaVelocityThreshold = 0.75f;   // 速度死区(rad/s)，低于此值视为静止
 
   float angleSingleTurn = 0.0f;                                               // 单圈角度
   float motorAngle = 0.0f;                                                      // 当前机械角度

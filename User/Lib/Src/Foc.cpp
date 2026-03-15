@@ -84,7 +84,7 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
           DEFAULT_CURRENT_KP, 
           DEFAULT_CURRENT_KI, 
           DEFAULT_CURRENT_KD, 
-          0.0001f, 
+          0.00005f, 
           CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT, 0.001f, 
           PID_MODE_POSITION);
 
@@ -94,9 +94,9 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
 
   HAL_ADCEx_InjectedStop(&hadc1);
 
-  // CalibrateZeroElectricAngle();
+  CalibrateZeroElectricAngle();
   // zeroElectricAngle = 5.43f;
-    zeroElectricAngle = 0.05f;
+  // zeroElectricAngle = 0.05f;
 
   __HAL_ADC_ENABLE_IT(&hadc1, ADC_IT_JEOC);
   HAL_ADCEx_InjectedStart_IT(&hadc1);
@@ -474,6 +474,7 @@ void FOC::MotorControlTask()
     break;
   
   case ControlMode::MIT:
+  {
     PID_SetOutputLimits(&positionPidController, -POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
     PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
     PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
@@ -486,6 +487,24 @@ void FOC::MotorControlTask()
     break;
   }
 
+  case ControlMode::RATCHET:
+  {
+    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+
+    float detentIndex = roundf(motorAngle / ratchetSpacing);
+    float detentAngle = detentIndex * ratchetSpacing;
+    float posError    = detentAngle - motorAngle;
+
+    iqSetpoint = ratchetKp * posError - ratchetKd * velocity;
+    iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
+    break;
+  }
+
+  case ControlMode::INERTIA:
+    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    break;
+  }
+
 
   float electricalAngle = GetElectricAngle(motorAngle);
   ClarkeParkTransform(electricalAngle);
@@ -493,10 +512,10 @@ void FOC::MotorControlTask()
   if (controlMode == ControlMode::VELOCITY || controlMode == ControlMode::POSITION)
   {
     loopCount++;
-    if (loopCount >= 10) // 10kHz电流环 1Khz速度位置环
+    if (loopCount >= 20) // 20kHz电流环 1kHz速度位置环
     {
       loopCount = 0;
-    
+
       if (controlMode == ControlMode::VELOCITY)
       {
         velocitySetpoint = constrain(targetSpeed, -SPEED_LIMIT, SPEED_LIMIT);
@@ -507,11 +526,40 @@ void FOC::MotorControlTask()
         this->velocitySetpoint = PIDCompute(&this->positionPidController, currentPosition, targetPosition);
         this->velocitySetpoint = constrain(this->velocitySetpoint, -SPEED_LIMIT, SPEED_LIMIT);
       }
-      
+
       float currentSpeed = velocity;
       iqSetpoint = PIDCompute(&speedPidController, currentSpeed, velocitySetpoint);
       iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
 
+    }
+  }
+  else if (controlMode == ControlMode::INERTIA)
+  {
+    loopCount++;
+    if (loopCount >= 20) // 20kHz电流环 1kHz惯性环
+    {
+      loopCount = 0;
+
+      if (fabsf(velocity) < inertiaVelocityThreshold)
+      {
+        // 电机已被停住（手捏或自然减速），清除惯性状态
+        targetSpeed = 0.0f;
+        iqSetpoint  = 0.0f;
+      }
+      else
+      {
+        // 加速时跟随（避免推动时产生阻力）
+        if (fabsf(velocity) > fabsf(targetSpeed))
+          targetSpeed = velocity;
+
+        // 惯性衰减
+        targetSpeed *= inertiaDecay;
+
+        // 统一P控制输出，无分支跳变
+        float speedError = targetSpeed - velocity;
+        iqSetpoint = inertiaKp * speedError;
+        iqSetpoint = constrain(iqSetpoint, -inertiaMaxCurrent, inertiaMaxCurrent);
+      }
     }
   }
 

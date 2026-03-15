@@ -30,10 +30,7 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 
-  if (huart == VOFA_UART) 
-  {
-    VOFA_RxCallBack();
-  }
+  Uart_RxEventCallback_Trampoline(huart, Size);
 
 }
 
@@ -44,13 +41,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) 
 {
-  // Uart_TxCpltCallback_Trampoline(huart);
-// #ifdef VOFA_DEBUG
-  if (huart == VOFA_UART) 
-  {
-    TxCallBack_DoubleBufferUartDMA(&uartToVOFA);
-  }
-// #endif
+  Uart_TxCpltCallback_Trampoline(huart);
 }
 
 
