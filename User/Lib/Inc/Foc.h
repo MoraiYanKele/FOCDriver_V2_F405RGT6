@@ -53,19 +53,19 @@ public:
  *         如果 val 大于 max_val，则返回 max_val。
  */
 template <typename T>
-T constrain(T val, T min_val, T max_val) 
+T constrain(T val, T min_val, T max_val)
 {
   return (val < min_val) ? min_val : ((val > max_val) ? max_val : val);
 }
 
-typedef struct 
+typedef struct
 {
   float alpha;     // 滤波器系数，范围在 0 到 1 之间，值越小，平滑效果越强
   float prevValue; // 上一个滤波后的输出值
 } LowPassFilterTypedef;
 
 enum class MotorMode : uint8_t
-{ 
+{
   INIT = 1,
   NONE = 2,
   RUNNING = 3
@@ -145,104 +145,138 @@ constexpr static float POSITION_PID_MAX_OUT = SPEED_LIMIT;                      
 class FOC
 {
 private:
- 
+  // Internal electrical state
+  float uAlpha_ = 0.0f, uBeta_ = 0.0f;
+  float currentAOffset_ = 0.0f, currentBOffset_ = 0.0f, currentCOffset_ = 0.0f;
+  float Vbus_ = 0.0f;
 
+  // Measured currents
+  float Ia_ = 0.0f, Ib_ = 0.0f, Ic_ = 0.0f;
+  float Iq_ = 0.0f, Id_ = 0.0f;
 
+  // Phase voltages (internal)
+  float voltageA_ = 0.0f, voltageB_ = 0.0f, voltageC_ = 0.0f;
+  float voltageA_Duty_ = 0.0f, voltageB_Duty_ = 0.0f, voltageC_Duty_ = 0.0f;
 
+  // Sensor state
+  float angleSingleTurn_ = 0.0f;
+  float motorAngle_ = 0.0f;
+  float velocity_ = 0.0f;
 
-  float uAlpha = 0.0f, uBeta = 0.0f;        // αβ 坐标系
-  float currentAOffset = 0.0f, currentBOffset = 0.0f, currentCOffset = 0.0f;  // 三相电流偏置
+  // Control targets
+  float targetPosition_ = 0.0f;
+  float targetSpeed_ = 0.0f;
+  float targetCurrent_ = 0.0f;
+  float targetTorque_ = 0.0f;
 
-  float Vbus = 0.0f;                                                          // 总线电压
+  // MIT params
+  float mitKp_ = 0.0f;
+  float mitKd_ = 0.0f;
 
-  
+  // Internal setpoints
+  float iqSetpoint_ = 0.0f;
+  float idSetpoint_ = 0.0f;
+  float positionSetpoint_ = 0.0f;
+  float velocitySetpoint_ = 0.0f;
 
-  TIM_HandleTypeDef* pwmTimer = nullptr;    // PWM定时器句柄
+  // State machine
+  MotorMode motorMode_ = MotorMode::INIT;
+  ControlMode controlMode_ = ControlMode::TORQUE;
 
-  LPS speedFiliter{1000.0f, 100.0f};         // 速度低通滤波器
+  // Hardware
+  TIM_HandleTypeDef* pwmTimer_ = nullptr;
 
-  LPS IqFilter{20000.0f, 40.0f};             // q轴电流低通滤波器
-  LPS IdFilter{20000.0f, 40.0f};             // d轴电流低通滤波器
+  // Filters
+  LPS speedFilter_{1000.0f, 100.0f};
+  LPS IqFilter_{20000.0f, 40.0f};
+  LPS IdFilter_{20000.0f, 40.0f};
+  LPS IaFilter_{20000.0f, 1000.0f};
+  LPS IbFilter_{20000.0f, 1000.0f};
+  LPS IcFilter_{20000.0f, 1000.0f};
 
-  LPS IaFilter{20000.0f, 1000.0f};          // A相电流低通滤波器
-  LPS IbFilter{20000.0f, 1000.0f};          // B相电流低通滤波器
-  LPS IcFilter{20000.0f, 1000.0f};          // C相电流低通滤波器
+  // PID controllers
+  PidController speedPid_;
+  PidController positionPid_;
+  PidController currentPid_;
 
+  // Loop counter for velocity decimation
+  uint8_t loopCount_ = 0;
 
-  void SetPwm();
-
-public:
-
-  PidController speedPid;
-  PidController positionPid;
-  PidController currentPid;
- 
 #ifdef YAW_MOTOR
-
-  float zeroElectricAngle = 1.5f; // 零电角度
+  float zeroElectricAngle_ = 1.5f;
 #else
-  float zeroElectricAngle = 0.0f;
+  float zeroElectricAngle_ = 0.0f;
 #endif
 
-  float Ia = 0.0f, Ib = 0.0f, Ic = 0.0f;                                      // 三相电流
-  float Iq = 0.0f, Id = 0.0f;                                                 // dq 坐标系
-  float voltageA = 0.0f, voltageB = 0.0f, voltageC = 0.0f; // 三相电压
-  float voltageA_Duty = 0.0f, voltageB_Duty = 0.0f, voltageC_Duty = 0.0f;
-
-  float mitKp = 0.0f;       // MIT 协议位置控制比例系数
-  float mitKd = 0.0f;       // MIT 协议位置控制微分系数
-
-  float angleSingleTurn = 0.0f;                                               // 单圈角度
-  float motorAngle = 0.0f;                                                      // 当前机械角度
-  float velocity = 0.0f;                                                      // 当前速度
-
-  MotorMode motorMode = MotorMode::INIT; // 电机控制模式
-  ControlMode controlMode = ControlMode::TORQUE; // 力矩控制模式
-
-  float targetPosition = 0.0f; // 目标位置
-  float targetSpeed = 0.0f;    // 目标速度
-  float targetCurrent = 0.0f;  // 目标电流
-  float targetTorque = 0.0f;   // 目标力矩
-
-  float iqSetpoint = 0.0f;    // q轴电流设定值
-  float idSetpoint = 0.0f;    // d轴电流设定值
-  float positionSetpoint = 0.0f; // 位置设定值
-  float velocitySetpoint = 0.0f; // 速度设定值
-
-
-  FOC();
-  ~FOC();
-  
-  // 改进的初始化函数，支持硬件抽象
-  bool Init(TIM_HandleTypeDef* timer = &htim1);
-
-  
-  // 参数配置接口
-  void SetMotorParameters(int polePairs, float voltageLimit, float powerSupply = VOLTAGE_POWER_SUPPLY);
-  void SetPIDParameters(float kp_speed, float ki_speed, float kd_speed,
-                        float kp_pos, float ki_pos, float kd_pos,
-                        float kp_current, float ki_current, float kd_current);
+  // Private methods
+  void SetPwm();
+  void SvpwmSector();
   void ClarkeParkTransform(float electricalAngle);
-  void CalibrateZeroElectricAngle();
-  void GetMechanicalAngle();
   float NormalizeAngle(float angle);
-  void SpeedControl(float targetSpeed);
-  void TorqueControl(float targetTorque);
-  void PositionControl(float targetPosition);
   float GetElectricAngle(float shaftAngle);
   void SetPhaseVoltage(float uq, float ud, float electricalAngle);
   float GetVelocity(float angle);
   float LowPassFilterUpdate(LowPassFilterTypedef *filter, float input);
-  void SvpwmSector();
-  
   void UpdateCurrent();
   void UpdateCurrentOffsets();
   void UpdateMotorAngle();
   void UpdateVelocity();
-
   void MotorControlTask();
-  // 安全检查和错误处理
+
+public:
+  FOC();
+  ~FOC();
+
+  // Lifecycle
+  bool Init(TIM_HandleTypeDef* timer = &htim1);
+  void Tick();
+  void CalibrateZeroElectricAngle();
   void EmergencyStop();
+
+  // Target-setting API (sets mode implicitly)
+  void SetTorqueTarget(float current);
+  void SetVelocityTarget(float speed);
+  void SetPositionTarget(float position);
+  void SetMitTarget(float pos, float vel, float torque, float kp, float kd);
+  void Stop();
+
+  // Read-only getters
+  float Ia() const { return Ia_; }
+  float Ib() const { return Ib_; }
+  float Ic() const { return Ic_; }
+  float Iq() const { return Iq_; }
+  float Id() const { return Id_; }
+  float MotorAngle() const { return motorAngle_; }
+  float AngleSingleTurn() const { return angleSingleTurn_; }
+  float Velocity() const { return velocity_; }
+  float TargetPosition() const { return targetPosition_; }
+  float TargetSpeed() const { return targetSpeed_; }
+  float TargetCurrent() const { return targetCurrent_; }
+  float TargetTorque() const { return targetTorque_; }
+  ControlMode GetControlMode() const { return controlMode_; }
+  MotorMode GetMotorMode() const { return motorMode_; }
+
+  // VOFA pointer access (for online tuning)
+  float* TargetPositionPtr() { return &targetPosition_; }
+  float* TargetSpeedPtr() { return &targetSpeed_; }
+  float* TargetCurrentPtr() { return &targetCurrent_; }
+  float* TargetTorquePtr() { return &targetTorque_; }
+
+  // PID access (for VOFA tuning)
+  PidController& SpeedPid() { return speedPid_; }
+  PidController& PositionPid() { return positionPid_; }
+  PidController& CurrentPid() { return currentPid_; }
+
+  // Legacy API
+  void SetPIDParameters(float kp_speed, float ki_speed, float kd_speed,
+                        float kp_pos, float ki_pos, float kd_pos,
+                        float kp_current, float ki_current, float kd_current);
+  void SetMotorParameters(int polePairs, float voltageLimit, float powerSupply = VOLTAGE_POWER_SUPPLY);
+
+  void SpeedControl(float targetSpeed);
+  void TorqueControl(float targetTorque);
+  void PositionControl(float targetPosition);
+  void GetMechanicalAngle();
 };
 
 

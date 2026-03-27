@@ -87,43 +87,28 @@ void AnalyzeCmd(uint32_t ctrlId)
   case MotorCanExtId::TORQUE_CTRL:
   {
     float torqueRx;
-    memcpy(&torqueRx, &canRxBuffer[0], sizeof(float)); 
-    
-    motor.targetTorque = torqueRx;
-    
-    motor.controlMode = ControlMode::TORQUE;
+    memcpy(&torqueRx, &canRxBuffer[0], sizeof(float));
+    motor.SetTorqueTarget(torqueRx);
     break;
   }
   case MotorCanExtId::VELOCITY_CTRL:
   {
     float velocityRx;
-    memcpy(&velocityRx, &canRxBuffer[0], sizeof(float)); 
-    
-    motor.targetSpeed = velocityRx;
-    
-    motor.controlMode = ControlMode::VELOCITY;
+    memcpy(&velocityRx, &canRxBuffer[0], sizeof(float));
+    motor.SetVelocityTarget(velocityRx);
     break;
   }
   case MotorCanExtId::POSITION_CTRL:
   {
     float positionRx;
-    memcpy(&positionRx, &canRxBuffer[0], sizeof(float)); 
-    
-    motor.targetPosition = positionRx;
-    
-    motor.controlMode = ControlMode::POSITION;
+    memcpy(&positionRx, &canRxBuffer[0], sizeof(float));
+    motor.SetPositionTarget(positionRx);
     break;
   }
   case MotorCanExtId::MIT_CTRL:
     GetMitCmd(canRxBuffer, &mitCmd_Rx);
-
-    motor.targetPosition = mitCmd_Rx.position;
-    motor.targetSpeed = mitCmd_Rx.velocity;
-    motor.targetTorque = mitCmd_Rx.torque;
-    motor.mitKp = mitCmd_Rx.kp;
-    motor.mitKd = mitCmd_Rx.kd;
-    
-    motor.controlMode = ControlMode::MIT;
+    motor.SetMitTarget(mitCmd_Rx.position, mitCmd_Rx.velocity,
+                       mitCmd_Rx.torque, mitCmd_Rx.kp, mitCmd_Rx.kd);
     break;
   default:
     break;
@@ -132,10 +117,10 @@ void AnalyzeCmd(uint32_t ctrlId)
 
 void SendStatusCmd()
 {
-  float position = motor.angleSingleTurn;
-  float velocity = motor.velocity;
-  float torque   = motor.Iq * TORQUE_CONST;
-  
+  float position = motor.AngleSingleTurn();
+  float velocity = motor.Velocity();
+  float torque   = motor.Iq() * TORQUE_CONST;
+
   uint16_t velInt    = FloatToUint(velocity, -200, 200, 16);
   uint16_t torqueInt = FloatToUint(torque, -TORQUE_LIMIT * 2, TORQUE_LIMIT * 2, 16);
 

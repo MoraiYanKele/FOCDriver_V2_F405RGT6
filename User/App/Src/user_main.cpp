@@ -38,7 +38,7 @@ void userMain()
 
     while (1) 
     {
-        Log::Print("%f, %f, %f, %f\n", motor.motorAngle, motor.velocity, motor.targetCurrent, motor.Iq);
+        Log::Print("%f, %f, %f, %f\n", motor.MotorAngle(), motor.Velocity(), motor.TargetCurrent(), motor.Iq());
         Delay(10);
     }
 }
