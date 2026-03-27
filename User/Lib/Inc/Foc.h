@@ -54,8 +54,6 @@ enum class ControlMode : uint8_t
   VELOCITY = 2,      // 速度控制模式
   POSITION = 3,      // 位置控制模式
   MIT = 4,           // MIT 协议控制模式
-  RATCHET = 5,       // 棘轮触觉反馈模式
-  INERTIA = 6,       // 惯性飞轮模式
 };
 
 
@@ -169,15 +167,6 @@ public:
 
   float mitKp = 0.0f;       // MIT 协议位置控制比例系数
   float mitKd = 0.0f;       // MIT 协议位置控制微分系数
-
-  float ratchetSpacing = (30.0f * _PI / 180.0f); // 棘轮间距 30°/格
-  float ratchetKp      = 0.5f;                   // 棘轮刚度系数 (A/rad)
-  float ratchetKd      = 0.2f;                  // 棘轮阻尼系数 (A·s/rad)
-
-  float inertiaDecay             = 0.9999f;  // 惯性衰减系数（每1ms），越接近1惯性越大（勿设为1.0）
-  float inertiaMaxCurrent        = 0.3f;   // 最大维持电流(A)，越小越容易停住
-  float inertiaKp                = 0.01f;  // 惯性比例增益(A·s/rad)，纯P控制无积分
-  float inertiaVelocityThreshold = 0.75f;   // 速度死区(rad/s)，低于此值视为静止
 
   float angleSingleTurn = 0.0f;                                               // 单圈角度
   float motorAngle = 0.0f;                                                      // 当前机械角度

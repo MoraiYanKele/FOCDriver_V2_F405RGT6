@@ -38,8 +38,9 @@ void MotorTask()
     motor.motorMode = MotorMode::RUNNING; // 切换到运行模式
     motor.targetSpeed = 0.0f;
     motor.velocitySetpoint = 0.0f;
-    motor.controlMode = ControlMode::INERTIA;
-    
+    motor.controlMode = ControlMode::TORQUE;
+    motor.targetCurrent = 0.0f;
+
     break;
 
   case MotorMode::RUNNING:

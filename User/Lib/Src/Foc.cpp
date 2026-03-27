@@ -488,23 +488,6 @@ void FOC::MotorControlTask()
     iqSetpoint = targetCurrent + mitKp * (targetPosition - currentPosition) + mitKd * (targetSpeed - currentSpeed);
     break;
   }
-
-  case ControlMode::RATCHET:
-  {
-    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
-
-    float detentIndex = roundf(motorAngle / ratchetSpacing);
-    float detentAngle = detentIndex * ratchetSpacing;
-    float posError    = detentAngle - motorAngle;
-
-    iqSetpoint = ratchetKp * posError - ratchetKd * velocity;
-    iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
-    break;
-  }
-
-  case ControlMode::INERTIA:
-    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
-    break;
   }
 
 
@@ -535,39 +518,7 @@ void FOC::MotorControlTask()
 
     }
   }
-  else if (controlMode == ControlMode::INERTIA)
-  {
-    loopCount++;
-    if (loopCount >= 20) // 20kHz电流环 1kHz惯性环
-    {
-      loopCount = 0;
 
-      if (fabsf(velocity) < inertiaVelocityThreshold)
-      {
-        // 电机已被停住（手捏或自然减速），清除惯性状态
-        targetSpeed = 0.0f;
-        iqSetpoint  = 0.0f;
-      }
-      else
-      {
-        // 加速时跟随（避免推动时产生阻力）
-        if (fabsf(velocity) > fabsf(targetSpeed))
-        {
-          targetSpeed = velocity;          
-        }
-
-        // 惯性衰减
-        targetSpeed *= inertiaDecay;
-
-        // 统一P控制输出，无分支跳变
-        float speedError = targetSpeed - velocity;
-        iqSetpoint = inertiaKp * speedError;
-        iqSetpoint = constrain(iqSetpoint, -inertiaMaxCurrent, inertiaMaxCurrent);
-      }
-    }
-  }
-
-  
   iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
   Iq = constrain(Iq, -CURRENT_LIMIT, CURRENT_LIMIT);
   float uq = PIDCompute(&currentPidController, Iq, iqSetpoint);
