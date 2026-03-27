@@ -66,29 +66,20 @@ bool FOC::Init(TIM_HandleTypeDef* timer)
   DWT_Init(168);
 
   // 初始化PID控制器
-  PID_Init(&positionPidController, 
-          DEFAULT_POSITION_KP, 
-          DEFAULT_POSITION_KI, 
-          DEFAULT_POSITION_KD, 
-          0.001f, 
-          POSITION_PID_MAX_OUT * 0.75f, POSITION_PID_MAX_OUT, 0.0f, 
-          PID_MODE_POSITION);
+  positionPid.Init(
+      DEFAULT_POSITION_KP, DEFAULT_POSITION_KI, DEFAULT_POSITION_KD,
+      0.001f, POSITION_PID_MAX_OUT * 0.75f, POSITION_PID_MAX_OUT, 0.0f,
+      PID_MODE_POSITION);
 
-  PID_Init(&speedPidController, 
-          DEFAULT_SPEED_KP, 
-          DEFAULT_SPEED_KI, 
-          DEFAULT_SPEED_KD, 
-          0.001f, 
-          SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT * 0.8f, 0.01f, 
-          PID_MODE_POSITION);
+  speedPid.Init(
+      DEFAULT_SPEED_KP, DEFAULT_SPEED_KI, DEFAULT_SPEED_KD,
+      0.001f, SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT * 0.8f, 0.01f,
+      PID_MODE_POSITION);
 
-  PID_Init(&currentPidController,
-          DEFAULT_CURRENT_KP, 
-          DEFAULT_CURRENT_KI, 
-          DEFAULT_CURRENT_KD, 
-          0.00005f, 
-          CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT, 0.001f, 
-          PID_MODE_POSITION);
+  currentPid.Init(
+      DEFAULT_CURRENT_KP, DEFAULT_CURRENT_KI, DEFAULT_CURRENT_KD,
+      0.00005f, CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT, 0.001f,
+      PID_MODE_POSITION);
 
   HAL_ADCEx_InjectedStart(&hadc1); // 只启动ADC，不启动中断
 
@@ -154,11 +145,11 @@ void FOC::PositionControl(float targetPosition)
   // 位置控制逻辑
   float currentPosition = motorAngle; // 获取当前机械角度
   // 使用 PID 控制器计算速度命令
-  float targetSpeed = PIDCompute(&positionPidController, currentPosition, targetPosition);
-  
+  float targetSpeed = positionPid.Compute(currentPosition, targetPosition);
+
   float currentSpeed = velocity;
 
-  float uq = PIDCompute(&speedPidController, currentSpeed, targetSpeed);
+  float uq = speedPid.Compute(currentSpeed, targetSpeed);
 
   // 设置相电压
   SetPhaseVoltage(uq, 0.0f, GetElectricAngle(currentPosition));
@@ -170,7 +161,7 @@ void FOC::SpeedControl(float targetSpeed)
   float electricalAngle = GetElectricAngle(currentPosition);
   float currentSpeed = velocity;
 
-  float uq = PIDCompute(&speedPidController, currentSpeed, targetSpeed); 
+  float uq = speedPid.Compute(currentSpeed, targetSpeed);
   
 
   SetPhaseVoltage(uq, 0.0f, GetElectricAngle(currentPosition)); // 设置相电压
@@ -373,20 +364,17 @@ void FOC::SetPIDParameters(float kp_speed, float ki_speed, float kd_speed,
                           float kp_pos, float ki_pos, float kd_pos,
                           float kp_current, float ki_current, float kd_current)
 {
-  // 重新配置速度PID
-  speedPidController.Kp = kp_speed;
-  speedPidController.Ki = ki_speed;
-  speedPidController.Kd = kd_speed;
-  
-  // 重新配置位置PID
-  positionPidController.Kp = kp_pos;
-  positionPidController.Ki = ki_pos;
-  positionPidController.Kd = kd_pos;
-  
-  // 重新配置电流PID
-  currentPidController.Kp = kp_current;
-  currentPidController.Ki = ki_current;
-  currentPidController.Kd = kd_current;
+  *speedPid.KpPtr() = kp_speed;
+  *speedPid.KiPtr() = ki_speed;
+  *speedPid.KdPtr() = kd_speed;
+
+  *positionPid.KpPtr() = kp_pos;
+  *positionPid.KiPtr() = ki_pos;
+  *positionPid.KdPtr() = kd_pos;
+
+  *currentPid.KpPtr() = kp_current;
+  *currentPid.KiPtr() = ki_current;
+  *currentPid.KdPtr() = kd_current;
 }
 
 // 安全监控相关方法实现
@@ -400,9 +388,9 @@ void FOC::EmergencyStop()
   SetPhaseVoltage(0.0f, 0.0f, 0.0f);
   
   // 重置PID控制器积分项，避免积分饱和
-  speedPidController.integral = 0.0f;
-  positionPidController.integral = 0.0f;
-  currentPidController.integral = 0.0f;
+  speedPid.ClearIntegral();
+  positionPid.ClearIntegral();
+  currentPid.ClearIntegral();
 }
 
 
@@ -451,7 +439,7 @@ void FOC::MotorControlTask()
   }
   case ControlMode::TORQUE:
   {
-    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    currentPid.SetOutputLimits(-CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
 
     // targetTorque = constrain(targetTorque, -TORQUE_LIMIT, TORQUE_LIMIT);
     // targetCurrent = constrain(targetTorque / TORQUE_CONST, -CURRENT_LIMIT, CURRENT_LIMIT);
@@ -465,21 +453,21 @@ void FOC::MotorControlTask()
   }
 
   case ControlMode::VELOCITY:
-    PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
-    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    speedPid.SetOutputLimits(-SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
+    currentPid.SetOutputLimits(-CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
     break;
 
   case ControlMode::POSITION:
-    // PID_SetOutputLimits(&positionPidController, -POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
-    PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
-    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    // positionPid.SetOutputLimits(-POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
+    speedPid.SetOutputLimits(-SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
+    currentPid.SetOutputLimits(-CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
     break;
-  
+
   case ControlMode::MIT:
   {
-    PID_SetOutputLimits(&positionPidController, -POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
-    PID_SetOutputLimits(&speedPidController, -SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
-    PID_SetOutputLimits(&currentPidController, -CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
+    positionPid.SetOutputLimits(-POSITION_PID_MAX_OUT, POSITION_PID_MAX_OUT);
+    speedPid.SetOutputLimits(-SPEED_PID_MAX_OUT, SPEED_PID_MAX_OUT);
+    currentPid.SetOutputLimits(-CURRENT_PID_MAX_OUT, CURRENT_PID_MAX_OUT);
     targetTorque = constrain(targetTorque, -TORQUE_LIMIT, TORQUE_LIMIT);
     targetCurrent = constrain(targetTorque / TORQUE_CONST, -CURRENT_LIMIT, CURRENT_LIMIT);
     float currentPosition = motorAngle; // 获取当前机械角度
@@ -508,12 +496,12 @@ void FOC::MotorControlTask()
       else if (controlMode == ControlMode::POSITION)
       {
         float currentPosition = motorAngle; // 获取当前机械角度
-        this->velocitySetpoint = PIDCompute(&this->positionPidController, currentPosition, targetPosition);
+        this->velocitySetpoint = positionPid.Compute(currentPosition, targetPosition);
         this->velocitySetpoint = constrain(this->velocitySetpoint, -SPEED_LIMIT, SPEED_LIMIT);
       }
 
       float currentSpeed = velocity;
-      iqSetpoint = PIDCompute(&speedPidController, currentSpeed, velocitySetpoint);
+      iqSetpoint = speedPid.Compute(currentSpeed, velocitySetpoint);
       iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
 
     }
@@ -521,7 +509,7 @@ void FOC::MotorControlTask()
 
   iqSetpoint = constrain(iqSetpoint, -CURRENT_LIMIT, CURRENT_LIMIT);
   Iq = constrain(Iq, -CURRENT_LIMIT, CURRENT_LIMIT);
-  float uq = PIDCompute(&currentPidController, Iq, iqSetpoint);
+  float uq = currentPid.Compute(Iq, iqSetpoint);
   SetPhaseVoltage(uq, 0.0f, GetElectricAngle(motorAngle)); // 设置相电压
 
 }

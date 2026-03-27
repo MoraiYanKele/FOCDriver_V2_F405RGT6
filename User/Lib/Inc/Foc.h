@@ -18,6 +18,30 @@ extern "C" {
 
 #include "LowPassFilter.h"
 
+class PidController {
+private:
+    PIDControllerTypedef pid_;
+public:
+    PidController() = default;
+
+    void Init(float kp, float ki, float kd, float sampleTime,
+              float outputLimits, float integralLimits, float deadBand,
+              PIDModeTypedef mode) {
+        PID_Init(&pid_, kp, ki, kd, sampleTime, outputLimits, integralLimits, deadBand, mode);
+    }
+
+    float Compute(float current, float target) { return PIDCompute(&pid_, current, target); }
+    void SetOutputLimits(float min, float max) { PID_SetOutputLimits(&pid_, min, max); }
+    void Reset() { PID_Reset(&pid_); }
+
+    float* KpPtr() { return &pid_.Kp; }
+    float* KiPtr() { return &pid_.Ki; }
+    float* KdPtr() { return &pid_.Kd; }
+
+    float Integral() const { return pid_.integral; }
+    void ClearIntegral() { pid_.integral = 0.0f; }
+};
+
 /**
  * @brief  将一个值限制在指定的最小和最大边界之间。
  * @tparam T 数据类型 (例如 float, int)。
@@ -149,9 +173,9 @@ private:
 
 public:
 
-  PIDControllerTypedef speedPidController;
-  PIDControllerTypedef positionPidController;
-  PIDControllerTypedef currentPidController;
+  PidController speedPid;
+  PidController positionPid;
+  PidController currentPid;
  
 #ifdef YAW_MOTOR
 
