@@ -1,3 +1,4 @@
 {
-  "cmake.sourceDirectory": "D:/stm32/Project_keil/FOCDriver_V2_F405RGT6/Drivers/CMSIS/NN/Source/ActivationFunctions"
+  "cmake.sourceDirectory": "D:/stm32/Project_keil/FOCDriver_V2_F405RGT6/Drivers/CMSIS/NN/Source/ActivationFunctions",
+  "idf.currentSetup": "d:\\Espressif\\frameworks\\esp-idf-v5.5.1"
 }
