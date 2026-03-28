@@ -271,8 +271,6 @@ public:
   void SetPIDParameters(float kp_speed, float ki_speed, float kd_speed,
                         float kp_pos, float ki_pos, float kd_pos,
                         float kp_current, float ki_current, float kd_current);
-  void SetMotorParameters(int polePairs, float voltageLimit, float powerSupply = VOLTAGE_POWER_SUPPLY);
-
   void SpeedControl(float targetSpeed);
   void TorqueControl(float targetTorque);
   void PositionControl(float targetPosition);
