@@ -32,13 +32,16 @@ void userMain()
 
     motor.Init(); // 初始化电机
 
+    motor.SetVelocityTarget(0.0f);
+    Log::RegisterData_Vofa("targetSpeed", motor.TargetSpeedPtr());
+
     xTaskCreate(CmdTask, "CmdTask", 512 * 2, nullptr, osPriorityNormal, &cmdTaskHandle);
 
     Log::Print("ready\n");
 
     while (1) 
     {
-        Log::Print("%f, %f, %f, %f\n", motor.MotorAngle(), motor.Velocity(), motor.TargetCurrent(), motor.Iq());
+        Log::Print("%f, %f, %f, %f\n", motor.MotorAngle(), motor.Velocity(), motor.TargetSpeed(), motor.Iq());
         Delay(10);
     }
 }

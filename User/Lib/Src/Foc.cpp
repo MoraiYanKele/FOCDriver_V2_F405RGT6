@@ -336,7 +336,9 @@ float FOC::GetVelocity(float angle)
   // 防止除零和异常时间间隔
   if (ts <= 0.0f || ts > 0.5f)
   {
-    return 0.0f; // 返回0或保持上次结果
+    timeLast = timeNow;  // 更新时间戳，避免下次仍然卡死
+    angleLast = angle;
+    return 0.0f;
   }
 
   // 处理角度跳跃（0-2π边界）
@@ -539,10 +541,8 @@ void FOC::Tick()
 
   case MotorMode::NONE:
     motorMode_ = MotorMode::RUNNING;
-    targetSpeed_ = 0.0f;
     velocitySetpoint_ = 0.0f;
-    controlMode_ = ControlMode::TORQUE;
-    targetCurrent_ = 0.0f;
+    iqSetpoint_ = 0.0f;
     break;
 
   case MotorMode::RUNNING:
