@@ -316,41 +316,22 @@ void FOC::SetPwm()
 
 float FOC::GetVelocity(float angle)
 {
-  static uint64_t timeLast = 0;
   static float angleLast = 0.0f;
   static bool firstRun = true;
 
-  uint64_t timeNow = DWT_GetTimeline_us();
-
-  // 第一次运行时初始化
   if (firstRun)
   {
-    timeLast = timeNow;
     angleLast = angle;
     firstRun = false;
     return 0.0f;
   }
 
-  float ts = (float)(timeNow - timeLast) / 1000000.0f; // 时间间隔，单位为秒
-
-  // 防止除零和异常时间间隔
-  if (ts <= 0.0f || ts > 0.5f)
-  {
-    timeLast = timeNow;  // 更新时间戳，避免下次仍然卡死
-    angleLast = angle;
-    return 0.0f;
-  }
-
-  // 处理角度跳跃（0-2π边界）
   float angleDiff = angle - angleLast;
 
-
-  float velocity = angleDiff / ts;
+  float velocity = angleDiff / VELOCITY_MEASURE_PERIOD;
   float velocityFiltered = speedFilter_.LPF_Update(velocity);
 
-  // 更新历史值
   angleLast = angle;
-  timeLast = timeNow;
 
   return velocityFiltered;
 }
